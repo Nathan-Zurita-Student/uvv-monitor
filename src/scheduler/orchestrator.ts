@@ -99,12 +99,20 @@ export async function runMonitor(
   ];
   const prioritized = prioritizeItems(touched, now);
   const prioritizedById = new Map(prioritized.map((item) => [item.id, item]));
-  const changedNow = [...diff.newItems, ...diff.changedItems.map(({ item }) => item)].flatMap(
-    (item) => {
-      const prioritizedItem = prioritizedById.get(item.id);
-      return prioritizedItem ? [prioritizedItem] : [];
-    },
-  );
+  const meaningfulChangedItems = diff.changedItems
+    .filter(({ item, changes }) => {
+      if (changes.length === 0) return false;
+      const enrichmentOnly = changes.every(({ field }) =>
+        ['description', 'discipline'].includes(field),
+      );
+      const previousDescription = changes.find(({ field }) => field === 'description')?.before;
+      return !(enrichmentOnly && previousDescription === item.metadata?.originalTitle);
+    })
+    .map(({ item }) => item);
+  const changedNow = [...diff.newItems, ...meaningfulChangedItems].flatMap((item) => {
+    const prioritizedItem = prioritizedById.get(item.id);
+    return prioritizedItem ? [prioritizedItem] : [];
+  });
   await repository.upsertDetectedItems(prioritized);
   run.itemsFound = candidates.length;
 
@@ -126,6 +134,12 @@ export async function runMonitor(
   try {
     if (run.portalStatus === 'FAILED' || run.portalStatus === 'NOT_VERIFIED') {
       await telegram.sendMessage('Portal/AVA não verificado nesta execução.');
+    }
+    const eadError = run.errors.find((error) => error.startsWith('Portal AVA/EAD:'));
+    if (eadError) {
+      await telegram.sendMessage(
+        `⚠️ Ambiente Virtual (EAD) não verificado nesta execução.\n\nO Portal UVV não conseguiu gerar o acesso automático aos cursos online. ${eadError.replace('Portal AVA/EAD: ', '')}\n\nAs páginas presenciais, o Gmail e o Calendar continuaram sendo verificados normalmente.`,
+      );
     }
     if (isBootstrap) {
       await telegram.sendMessage(

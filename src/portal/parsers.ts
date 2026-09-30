@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ItemType } from '../models/academic-item.js';
-import type { ClassCardInput, MessageLinkInput, PortalItem } from './models.js';
+import type { ClassCardInput, ClassPostPageInput, MessageLinkInput, PortalItem } from './models.js';
 
 const portalBase = 'https://aluno.uvv.br';
 
@@ -32,6 +32,85 @@ const workflowResponseSchema = z.array(workflowEntrySchema);
 
 function clean(value: string | null | undefined): string {
   return (value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+const monthNumbers: Record<string, number> = {
+  janeiro: 1,
+  fevereiro: 2,
+  marco: 3,
+  abril: 4,
+  maio: 5,
+  junho: 6,
+  julho: 7,
+  agosto: 8,
+  setembro: 9,
+  outubro: 10,
+  novembro: 11,
+  dezembro: 12,
+};
+
+function isoDate(year: number, month: number, day: number): string | undefined {
+  const value = new Date(Date.UTC(year, month - 1, day));
+  if (
+    value.getUTCFullYear() !== year ||
+    value.getUTCMonth() !== month - 1 ||
+    value.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+export function extractPortalDates(
+  text: string,
+  type: ItemType,
+  referenceYear: number,
+): { officialDate?: string; officialDeadline?: string } {
+  const normalized = clean(text)
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+  const deadline =
+    /prazo\s+para\s+entrega\s*:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/i.exec(
+      normalized,
+    );
+  if (deadline) {
+    const date = isoDate(Number(deadline[3]), Number(deadline[2]), Number(deadline[1]));
+    if (date) {
+      return {
+        officialDeadline:
+          deadline[4] && deadline[5]
+            ? `${date}T${deadline[4].padStart(2, '0')}:${deadline[5]}:00`
+            : date,
+      };
+    }
+  }
+
+  if (type === 'EXAM') {
+    const writtenDate =
+      /(?:prova|avaliacao|exame)[^.!?]{0,160}?(?:dia\s+)?(\d{1,2})\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+de\s+(\d{4}))?/i.exec(
+        normalized,
+      );
+    if (writtenDate) {
+      const date = isoDate(
+        Number(writtenDate[3] ?? referenceYear),
+        monthNumbers[writtenDate[2] ?? ''] ?? 0,
+        Number(writtenDate[1]),
+      );
+      if (date) return { officialDate: date };
+    }
+    const numericDate =
+      /(?:prova|avaliacao|exame)[^.!?]{0,120}?(?:dia\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i.exec(
+        normalized,
+      );
+    if (numericDate) {
+      const rawYear = Number(numericDate[3] ?? referenceYear);
+      const year = rawYear < 100 ? 2000 + rawYear : rawYear;
+      const date = isoDate(year, Number(numericDate[2]), Number(numericDate[1]));
+      if (date) return { officialDate: date };
+    }
+  }
+  return {};
 }
 
 export function inferItemType(text: string): ItemType {
@@ -102,6 +181,51 @@ export function parseClassCards(inputs: ClassCardInput[]): PortalItem[] {
     }
   }
   return items;
+}
+
+export function parseClassPostPage(input: ClassPostPageInput): PortalItem {
+  const match = /\/Aluno\/Post\/([^/?#]+)/i.exec(input.url);
+  if (!match?.[1]) throw new Error(`Link de post inválido: ${input.url}`);
+  const headings = input.headings.map((heading) => clean(heading)).filter(Boolean);
+  const originalTitle = headings.find((heading) => heading.toLowerCase() !== 'uvv avisa') ?? 'Post';
+  const body = clean(input.bodyText);
+  const type = inferItemType(`${originalTitle} ${body}`);
+  const dates = extractPortalDates(
+    `${headings.join(' ')} ${body} ${input.pageText}`,
+    type,
+    input.referenceYear,
+  );
+  const titleIndex = headings.indexOf(originalTitle);
+  const professor = titleIndex >= 0 ? headings[titleIndex + 1] : undefined;
+  const discipline = clean(input.discipline)
+    .replace(
+      professor ? new RegExp(`${professor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`, 'i') : /$^/,
+      '',
+    )
+    .replace(/\s+Acessar(?:\s+ambiente\s+virtual)?\s*$/i, '')
+    .trim();
+  const title =
+    type === 'EXAM' && /roteiro|orienta|estudo/i.test(originalTitle)
+      ? `Prova — ${discipline.replace(/^\S+\s+-\s+/, '')}`
+      : originalTitle;
+  return {
+    externalId: `post:${match[1]}`,
+    origin: 'CLASS_POST',
+    sourceUrl: input.url,
+    discipline,
+    title,
+    description: body || originalTitle,
+    type,
+    ...dates,
+    ...(professor ? { professor } : {}),
+    links: [input.url, ...input.links.map((link) => link.href)],
+    metadata: {
+      portalPostId: match[1],
+      originalTitle,
+      ...(professor ? { professor } : {}),
+      relatedLinks: JSON.stringify(input.links),
+    },
+  };
 }
 
 export function parseCalendarResponse(payload: unknown): PortalItem[] {

@@ -29,8 +29,8 @@ export function classifyUrgency(item: AcademicItem, now = new Date()): Urgency {
   if (!value) return 'INFORMATIONAL';
   const due = parseAcademicDate(value, Boolean(item.officialDeadline));
   if (Number.isNaN(due.getTime())) return 'INFORMATIONAL';
-  if (due.getTime() < now.getTime()) return 'OVERDUE';
   if (localDateKey(due) === localDateKey(now)) return 'TODAY';
+  if (due.getTime() < now.getTime()) return 'OVERDUE';
   const hours = differenceInHours(due, now);
   if (hours <= 24) return 'NEXT_24_HOURS';
   if (hours <= 72) return 'NEXT_72_HOURS';

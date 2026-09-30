@@ -67,4 +67,13 @@ describe('prioridade determinística', () => {
   it('não pergunta progresso de comunicado informativo sem data', () => {
     expect(selectProgressCheckins([item({ type: 'NOTICE' })], new Map(), now)).toEqual([]);
   });
+
+  it('mantém prova sem horário como HOJE durante todo o dia local', () => {
+    expect(
+      classifyUrgency(
+        item({ type: 'EXAM', officialDate: '2026-09-30' }),
+        new Date('2026-09-30T23:00:00Z'),
+      ),
+    ).toBe('TODAY');
+  });
 });

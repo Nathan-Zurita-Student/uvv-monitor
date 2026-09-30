@@ -93,6 +93,11 @@ export async function processTelegramUpdates(
       continue;
     }
 
+    if (item.status === action.status) {
+      processed += 1;
+      continue;
+    }
+
     const updated: AcademicItem = { ...item, status: action.status };
     await repository.upsertDetectedItems([updated]);
     await repository.upsertTaskStatus({

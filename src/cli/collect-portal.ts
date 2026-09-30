@@ -6,6 +6,7 @@ import { createPortalBrowserSession } from '../portal/browser.js';
 import {
   collectCalendarEvents,
   collectClassPosts,
+  collectEadActivities,
   collectMessages,
   collectRegularSchedule,
   collectServiceHistory,
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
     const collectors = [
       ['Mensagens', collectMessages],
       ['Turmas', collectClassPosts],
+      ['AVA/EAD', collectEadActivities],
       ['Atendimento', collectServiceHistory],
       ['Calendário', collectCalendarEvents],
       ['Horários', collectRegularSchedule],
