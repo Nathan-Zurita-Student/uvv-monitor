@@ -5,13 +5,34 @@ import type { TelegramClient } from './client.js';
 import type { TelegramUpdate } from './types.js';
 
 const statusLabels: Record<ItemStatus, string> = {
-  TODO: 'NÃO INICIADO',
-  IN_PROGRESS: 'EM ANDAMENTO',
-  DONE: 'CONCLUÍDO',
-  WAITING: 'AGUARDANDO',
-  NEEDS_CONFIRMATION: 'PRECISA DE CONFIRMAÇÃO',
-  IGNORED: 'IGNORADO',
+  TODO: 'Ainda não comecei',
+  IN_PROGRESS: 'Estou fazendo',
+  DONE: 'Concluída',
+  WAITING: 'Aguardando',
+  NEEDS_CONFIRMATION: 'Precisa de confirmação',
+  IGNORED: 'Ignorada',
 };
+
+const helpMessage = [
+  'Olá! Eu acompanho suas informações acadêmicas da UVV.',
+  '',
+  'Quando uma tarefa precisar da sua atenção, vou explicar o que aconteceu e mostrar botões para você atualizar o andamento. Você não precisa decorar comandos nem copiar códigos.',
+  '',
+  'Também aceito respostas como “já fiz”, “estou fazendo” e “ainda não comecei” quando você responde diretamente à mensagem de uma tarefa.',
+].join('\n');
+
+function confirmation(item: AcademicItem, status: ItemStatus): string {
+  const title = item.title.replace(/\s+/g, ' ').trim();
+  if (status === 'DONE')
+    return `✅ Pronto! Marquei “${title}” como concluída. Ela não aparecerá mais nas suas pendências.`;
+  if (status === 'IN_PROGRESS')
+    return `🔄 Certo! Marquei “${title}” como em andamento. Vou levar isso em conta nos próximos resumos.`;
+  if (status === 'TODO')
+    return `⏳ Tudo bem. “${title}” continua como não iniciada e permanecerá nas suas prioridades.`;
+  if (status === 'IGNORED')
+    return `🙈 Entendido. “${title}” foi ignorada e não aparecerá mais nas suas pendências.`;
+  return `Atualizei “${title}” para: ${statusLabels[status]}.`;
+}
 
 function messageFrom(update: TelegramUpdate) {
   if (update.message) return update.message;
@@ -38,23 +59,34 @@ export async function processTelegramUpdates(
     const text = update.message?.text ?? update.callback_query?.data;
     if (!message || String(message.chat.id) !== allowedChatId || !text) continue;
 
+    if (update.callback_query) await client.answerCallbackQuery(update.callback_query.id);
+
     const action = parseTelegramAction(text, message.reply_to_message?.text);
     if (action.kind === 'IGNORE') continue;
+    if (action.kind === 'HELP') {
+      await client.sendMessage(helpMessage);
+      processed += 1;
+      continue;
+    }
     if (action.kind === 'UNKNOWN') {
       await client.sendMessage(
-        `${action.reason} Use /feito UVV-XXXXXX, /fazendo UVV-XXXXXX, /pendente UVV-XXXXXX, /ignorar UVV-XXXXXX ou /status UVV-XXXXXX.`,
+        `${action.reason}\n\nPara evitar atualizar a tarefa errada, responda diretamente à mensagem dela com “já fiz”, “estou fazendo” ou “ainda não comecei”. Quando houver botões, você também pode apenas tocar em uma opção.`,
       );
       continue;
     }
 
     const item = byId.get(action.itemId);
     if (!item) {
-      await client.sendMessage(`Não encontrei a tarefa ${action.itemId}.`);
+      await client.sendMessage(
+        `Não encontrei a tarefa ${action.itemId}. Ela pode ser antiga ou o código pode estar incompleto. Aguarde o próximo resumo e use os botões mostrados nele.`,
+      );
       continue;
     }
 
     if (action.kind === 'GET_STATUS') {
-      await client.sendMessage(`${item.id} — ${item.title}\nStatus: ${statusLabels[item.status]}`);
+      await client.sendMessage(
+        `📌 ${item.title.replace(/\s+/g, ' ').trim()}\n📊 Seu andamento: ${statusLabels[item.status]}\n🆔 Código: ${item.id}`,
+      );
       processed += 1;
       continue;
     }
@@ -68,7 +100,7 @@ export async function processTelegramUpdates(
       source: 'TELEGRAM',
     });
     byId.set(item.id.toUpperCase(), updated);
-    await client.sendMessage(`${item.id} atualizado para ${statusLabels[action.status]}.`);
+    await client.sendMessage(confirmation(item, action.status));
     processed += 1;
   }
 

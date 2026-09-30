@@ -72,6 +72,7 @@ export function selectProgressCheckins(
 ): AcademicItem[] {
   return prioritizeItems(items, now)
     .filter((item) => {
+      if (item.urgency === 'INFORMATIONAL' || item.metadata?.contextOnly === 'true') return false;
       if (!['TODO', 'NEEDS_CONFIRMATION'].includes(item.status)) return false;
       if (['OVERDUE', 'TODAY', 'NEXT_24_HOURS', 'NEXT_72_HOURS'].includes(item.urgency))
         return true;

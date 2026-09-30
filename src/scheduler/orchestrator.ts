@@ -129,7 +129,7 @@ export async function runMonitor(
     }
     if (isBootstrap) {
       await telegram.sendMessage(
-        `UVV Monitor inicializado. ${String(candidates.length)} itens foram registrados sem alertas retroativos.`,
+        `Tudo pronto! Fiz a primeira leitura do Portal, Gmail e Calendar.\n\nEncontrei ${String(candidates.length)} registros acadêmicos. Guardei os comunicados antigos no histórico, mas não vou tratá-los como novidades nem encher seu Telegram com alertas retroativos. A seguir, mostrarei somente o que realmente merece sua atenção.`,
       );
     } else {
       for (const item of changedNow) {
@@ -137,12 +137,26 @@ export async function runMonitor(
       }
     }
     const allItems = prioritizeItems(await repository.listDetectedItems(), now);
-    if (allItems.length > 0) await telegram.sendMessage(formatPriorities(allItems));
+    const priorities = formatPriorities(allItems);
+    if (priorities) await telegram.sendMessage(priorities);
     const statusMap = new Map(
       (await repository.listTaskStatuses()).map((status) => [status.itemId, status.updatedAt]),
     );
-    const checkin = formatProgressCheck(selectProgressCheckins(allItems, statusMap, now));
-    if (checkin) await telegram.sendMessage(checkin);
+    const checkins = selectProgressCheckins(allItems, statusMap, now);
+    for (const item of checkins) {
+      await telegram.sendMessage(formatProgressCheck(item), {
+        inlineKeyboard: [
+          [
+            { text: '✅ Já fiz', callback_data: `/feito ${item.id}` },
+            { text: '🔄 Estou fazendo', callback_data: `/fazendo ${item.id}` },
+          ],
+          [
+            { text: '⏳ Ainda não comecei', callback_data: `/pendente ${item.id}` },
+            { text: '🙈 Ignorar', callback_data: `/ignorar ${item.id}` },
+          ],
+        ],
+      });
+    }
     if (slot === '21:00') {
       const summary = format72HourSummary(allItems);
       if (summary) await telegram.sendMessage(summary);

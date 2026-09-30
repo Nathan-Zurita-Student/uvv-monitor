@@ -2,6 +2,15 @@ import type { TelegramApiResponse, TelegramUpdate } from './types.js';
 
 const maxTelegramMessageLength = 4096;
 
+export interface TelegramButton {
+  text: string;
+  callback_data: string;
+}
+
+export interface TelegramMessageOptions {
+  inlineKeyboard?: TelegramButton[][];
+}
+
 export class TelegramClient {
   private readonly baseUrl: string;
 
@@ -34,15 +43,22 @@ export class TelegramClient {
     });
   }
 
-  async sendMessage(text: string): Promise<void> {
+  async sendMessage(text: string, options: TelegramMessageOptions = {}): Promise<void> {
     const chunks = splitTelegramMessage(text);
-    for (const chunk of chunks) {
+    for (const [index, chunk] of chunks.entries()) {
       await this.call('sendMessage', {
         chat_id: this.chatId,
         text: chunk,
         disable_web_page_preview: true,
+        ...(options.inlineKeyboard && index === chunks.length - 1
+          ? { reply_markup: { inline_keyboard: options.inlineKeyboard } }
+          : {}),
       });
     }
+  }
+
+  async answerCallbackQuery(callbackQueryId: string): Promise<void> {
+    await this.call('answerCallbackQuery', { callback_query_id: callbackQueryId });
   }
 }
 

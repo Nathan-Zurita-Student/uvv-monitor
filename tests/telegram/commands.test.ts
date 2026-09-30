@@ -38,7 +38,11 @@ describe('comandos e respostas Telegram', () => {
     expect(parseTelegramAction('já fiz')).toMatchObject({ kind: 'UNKNOWN' });
   });
 
-  it.each(['/start', 'oi', 'obrigado', 'teste'])('ignora mensagem comum: %s', (text) => {
+  it.each(['oi', 'obrigado', 'teste'])('ignora mensagem comum: %s', (text) => {
     expect(parseTelegramAction(text)).toEqual({ kind: 'IGNORE' });
+  });
+
+  it.each(['/start', '/ajuda'])('mostra ajuda para %s', (text) => {
+    expect(parseTelegramAction(text)).toEqual({ kind: 'HELP' });
   });
 });

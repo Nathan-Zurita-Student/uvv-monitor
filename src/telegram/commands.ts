@@ -3,6 +3,7 @@ import type { ItemStatus } from '../models/academic-item.js';
 export type TelegramAction =
   | { kind: 'SET_STATUS'; itemId: string; status: ItemStatus }
   | { kind: 'GET_STATUS'; itemId: string }
+  | { kind: 'HELP' }
   | { kind: 'IGNORE' }
   | { kind: 'UNKNOWN'; reason: string };
 
@@ -25,6 +26,8 @@ export function parseTelegramAction(text: string, replyText?: string): TelegramA
   const normalized = normalize(text);
   const itemId = itemIdFrom(text, replyText);
   const explicit = /^\/(feito|fazendo|pendente|ignorar|status)(?:@\w+)?\b/i.exec(text.trim());
+
+  if (/^\/(start|ajuda)(?:@\w+)?\b/i.test(text.trim())) return { kind: 'HELP' };
 
   if (explicit) {
     if (!itemId) return { kind: 'UNKNOWN', reason: 'ID da tarefa ausente.' };

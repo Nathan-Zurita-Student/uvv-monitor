@@ -63,4 +63,8 @@ describe('prioridade determinística', () => {
       selectProgressCheckins(items, new Map(), now).some((entry) => entry.status === 'IN_PROGRESS'),
     ).toBe(false);
   });
+
+  it('não pergunta progresso de comunicado informativo sem data', () => {
+    expect(selectProgressCheckins([item({ type: 'NOTICE' })], new Map(), now)).toEqual([]);
+  });
 });
