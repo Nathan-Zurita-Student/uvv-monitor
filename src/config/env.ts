@@ -1,0 +1,65 @@
+import 'dotenv/config';
+import { z } from 'zod';
+
+const optionalSecret = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().trim().min(1).optional(),
+);
+
+const environmentSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  TZ: z.literal('America/Sao_Paulo').default('America/Sao_Paulo'),
+  DRY_RUN: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  PORTAL_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
+  DIAGNOSTICS_DIR: z.string().trim().min(1).default('artifacts/diagnostics'),
+  UVV_USERNAME: optionalSecret,
+  UVV_PASSWORD: optionalSecret,
+  TELEGRAM_BOT_TOKEN: optionalSecret,
+  TELEGRAM_CHAT_ID: optionalSecret,
+  GOOGLE_CLIENT_ID: optionalSecret,
+  GOOGLE_CLIENT_SECRET: optionalSecret,
+  GOOGLE_REFRESH_TOKEN: optionalSecret,
+  GOOGLE_SHEET_ID: optionalSecret,
+});
+
+export type AppConfig = z.infer<typeof environmentSchema>;
+
+export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppConfig {
+  const result = environmentSchema.safeParse(environment);
+  if (!result.success) {
+    const fields = result.error.issues.map((issue) => issue.path.join('.')).join(', ');
+    throw new Error(`Configuração inválida nos campos: ${fields}`);
+  }
+  return result.data;
+}
+
+export interface PortalCredentials {
+  username: string;
+  password: string;
+}
+
+export function requirePortalCredentials(config: AppConfig): PortalCredentials {
+  if (!config.UVV_USERNAME || !config.UVV_PASSWORD) {
+    throw new Error(
+      'Credenciais do Portal ausentes. Defina UVV_USERNAME e UVV_PASSWORD no ambiente.',
+    );
+  }
+  return { username: config.UVV_USERNAME, password: config.UVV_PASSWORD };
+}
+
+export function configPresence(config: AppConfig): Record<string, boolean | string> {
+  return {
+    timezone: config.TZ,
+    dryRun: config.DRY_RUN,
+    uvvCredentials: Boolean(config.UVV_USERNAME && config.UVV_PASSWORD),
+    telegram: Boolean(config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID),
+    googleOAuth: Boolean(
+      config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET && config.GOOGLE_REFRESH_TOKEN,
+    ),
+    googleSheet: Boolean(config.GOOGLE_SHEET_ID),
+  };
+}

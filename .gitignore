@@ -1,0 +1,29 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+
+# Credenciais, tokens e estado autenticado
+auth.json
+tokens/
+*.token.json
+storage-state*.json
+storageState*.json
+playwright/.auth/
+
+# Diagnósticos podem conter dados acadêmicos pessoais
+artifacts/
+test-results/
+playwright-report/
+screenshots/
+*.har
+*.trace.zip
+
+# Arquivos locais
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
