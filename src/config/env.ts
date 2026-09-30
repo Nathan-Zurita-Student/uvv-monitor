@@ -42,6 +42,13 @@ export interface PortalCredentials {
   password: string;
 }
 
+export interface GoogleCredentials {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+  sheetId: string;
+}
+
 export function requirePortalCredentials(config: AppConfig): PortalCredentials {
   if (!config.UVV_USERNAME || !config.UVV_PASSWORD) {
     throw new Error(
@@ -49,6 +56,25 @@ export function requirePortalCredentials(config: AppConfig): PortalCredentials {
     );
   }
   return { username: config.UVV_USERNAME, password: config.UVV_PASSWORD };
+}
+
+export function requireGoogleCredentials(config: AppConfig): GoogleCredentials {
+  if (
+    !config.GOOGLE_CLIENT_ID ||
+    !config.GOOGLE_CLIENT_SECRET ||
+    !config.GOOGLE_REFRESH_TOKEN ||
+    !config.GOOGLE_SHEET_ID
+  ) {
+    throw new Error(
+      'Configuração Google ausente. Defina GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN e GOOGLE_SHEET_ID.',
+    );
+  }
+  return {
+    clientId: config.GOOGLE_CLIENT_ID,
+    clientSecret: config.GOOGLE_CLIENT_SECRET,
+    refreshToken: config.GOOGLE_REFRESH_TOKEN,
+    sheetId: config.GOOGLE_SHEET_ID,
+  };
 }
 
 export function configPresence(config: AppConfig): Record<string, boolean | string> {
