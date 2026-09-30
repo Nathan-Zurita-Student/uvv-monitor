@@ -32,12 +32,14 @@ describe('mensagens naturais do Telegram', () => {
     expect(result).not.toContain('Comunicado antigo');
     expect(result).toContain('sexta-feira, 02/10/2026, às 23h59');
     expect(result).toContain('Basta tocar em um botão');
+    expect(result).toContain('🔗 Abrir no Portal UVV: https://aluno.uvv.br');
   });
 
   it('cria uma pergunta individual sem exigir comando', () => {
     const result = formatProgressCheck(item());
     expect(result).toContain('COMO ESTÁ ESSA TAREFA?');
-    expect(result).toContain('Você não precisa digitar o código');
+    expect(result).toContain('Use um dos botões do teclado abaixo');
+    expect(result).toContain('🔗 Abrir no Portal UVV: https://aluno.uvv.br');
     expect(result).not.toContain('/feito');
   });
 

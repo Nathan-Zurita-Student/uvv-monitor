@@ -9,6 +9,7 @@ export interface TelegramButton {
 
 export interface TelegramMessageOptions {
   inlineKeyboard?: TelegramButton[][];
+  replyKeyboard?: string[][];
 }
 
 export class TelegramClient {
@@ -46,13 +47,25 @@ export class TelegramClient {
   async sendMessage(text: string, options: TelegramMessageOptions = {}): Promise<void> {
     const chunks = splitTelegramMessage(text);
     for (const [index, chunk] of chunks.entries()) {
+      const isLastChunk = index === chunks.length - 1;
+      const replyMarkup =
+        isLastChunk && options.inlineKeyboard
+          ? { inline_keyboard: options.inlineKeyboard }
+          : isLastChunk && options.replyKeyboard
+            ? {
+                keyboard: options.replyKeyboard.map((row) =>
+                  row.map((buttonText) => ({ text: buttonText })),
+                ),
+                resize_keyboard: true,
+                one_time_keyboard: true,
+                input_field_placeholder: 'Escolha uma opção',
+              }
+            : undefined;
       await this.call('sendMessage', {
         chat_id: this.chatId,
         text: chunk,
         disable_web_page_preview: true,
-        ...(options.inlineKeyboard && index === chunks.length - 1
-          ? { reply_markup: { inline_keyboard: options.inlineKeyboard } }
-          : {}),
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       });
     }
   }

@@ -73,6 +73,11 @@ function disciplineLine(item: AcademicItem): string {
   return `🎓 ${cleanText(item.discipline ?? (item.source === 'GMAIL' ? 'E-mail da UVV' : 'Portal UVV'))}`;
 }
 
+function sourceLinkLine(item: AcademicItem): string {
+  const label = item.source === 'PORTAL' ? 'Abrir no Portal UVV' : 'Abrir informação original';
+  return `🔗 ${label}: ${item.sourceUrl}`;
+}
+
 export function formatNovelty(item: AcademicItem): string {
   const lines = [
     'NOVIDADE UVV',
@@ -111,6 +116,7 @@ export function formatPriorities(items: AcademicItem[]): string {
       `📅 Prazo: ${formatAcademicDate(item.officialDeadline ?? item.officialDate)}`,
       `⚠️ Prioridade: ${urgencyLabels[item.urgency]}`,
       `📊 Seu andamento: ${statusLabels[item.status]}`,
+      sourceLinkLine(item),
       `🆔 Código: ${item.id}`,
     );
   }
@@ -129,8 +135,9 @@ export function formatProgressCheck(item: AcademicItem): string {
     disciplineLine(item),
     `📅 Prazo: ${formatAcademicDate(item.officialDeadline ?? item.officialDate)}`,
     `📊 Situação atual: ${statusLabels[item.status]}`,
+    sourceLinkLine(item),
     '',
-    'Toque em uma opção abaixo. Você não precisa digitar o código da tarefa.',
+    'Use um dos botões do teclado abaixo. Sua escolha aparecerá no chat e será confirmada na próxima verificação do monitor.',
   ].join('\n');
 }
 

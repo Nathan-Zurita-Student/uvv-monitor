@@ -47,7 +47,8 @@ export function parseTelegramAction(text: string, replyText?: string): TelegramA
     normalized,
   );
   const donePhrase = /\b(ja fiz|terminei|concluido|conclui)\b/.test(normalized);
-  if (!todoPhrase && !progressPhrase && !donePhrase) return { kind: 'IGNORE' };
+  const ignorePhrase = /\b(ignorar|nao quero acompanhar)\b/.test(normalized);
+  if (!todoPhrase && !progressPhrase && !donePhrase && !ignorePhrase) return { kind: 'IGNORE' };
   if (!itemId) return { kind: 'UNKNOWN', reason: 'Não foi possível identificar a tarefa.' };
   if (todoPhrase) {
     return { kind: 'SET_STATUS', itemId, status: 'TODO' };
@@ -57,6 +58,9 @@ export function parseTelegramAction(text: string, replyText?: string): TelegramA
   }
   if (donePhrase) {
     return { kind: 'SET_STATUS', itemId, status: 'DONE' };
+  }
+  if (ignorePhrase) {
+    return { kind: 'SET_STATUS', itemId, status: 'IGNORED' };
   }
   return { kind: 'IGNORE' };
 }

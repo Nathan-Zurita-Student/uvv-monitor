@@ -59,7 +59,9 @@ export async function processTelegramUpdates(
     const text = update.message?.text ?? update.callback_query?.data;
     if (!message || String(message.chat.id) !== allowedChatId || !text) continue;
 
-    if (update.callback_query) await client.answerCallbackQuery(update.callback_query.id);
+    if (update.callback_query) {
+      await client.answerCallbackQuery(update.callback_query.id).catch(() => undefined);
+    }
 
     const action = parseTelegramAction(text, message.reply_to_message?.text);
     if (action.kind === 'IGNORE') continue;

@@ -142,18 +142,12 @@ export async function runMonitor(
     const statusMap = new Map(
       (await repository.listTaskStatuses()).map((status) => [status.itemId, status.updatedAt]),
     );
-    const checkins = selectProgressCheckins(allItems, statusMap, now);
+    const checkins = selectProgressCheckins(allItems, statusMap, now).slice(0, 1);
     for (const item of checkins) {
       await telegram.sendMessage(formatProgressCheck(item), {
-        inlineKeyboard: [
-          [
-            { text: '✅ Já fiz', callback_data: `/feito ${item.id}` },
-            { text: '🔄 Estou fazendo', callback_data: `/fazendo ${item.id}` },
-          ],
-          [
-            { text: '⏳ Ainda não comecei', callback_data: `/pendente ${item.id}` },
-            { text: '🙈 Ignorar', callback_data: `/ignorar ${item.id}` },
-          ],
+        replyKeyboard: [
+          [`✅ Já fiz — ${item.id}`, `🔄 Estou fazendo — ${item.id}`],
+          [`⏳ Ainda não comecei — ${item.id}`, `🙈 Ignorar — ${item.id}`],
         ],
       });
     }

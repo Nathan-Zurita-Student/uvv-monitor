@@ -22,6 +22,7 @@ describe('comandos e respostas Telegram', () => {
     ['já fiz UVV-ABC123', 'DONE'],
     ['estou fazendo UVV-ABC123', 'IN_PROGRESS'],
     ['ainda não fiz UVV-ABC123', 'TODO'],
+    ['🙈 Ignorar — UVV-ABC123', 'IGNORED'],
   ] as const)('interpreta linguagem natural: %s', (text, status) => {
     expect(parseTelegramAction(text)).toEqual({ kind: 'SET_STATUS', itemId: 'UVV-ABC123', status });
   });
