@@ -64,10 +64,8 @@ async function main(): Promise<void> {
     );
   }
   console.log('\nAdicione estes nomes aos GitHub Secrets:');
-  console.log(`GOOGLE_CLIENT_ID=${credentials.clientId}`);
-  console.log('GOOGLE_CLIENT_SECRET=<o mesmo valor usado localmente>');
   console.log(`GOOGLE_REFRESH_TOKEN=${tokens.refresh_token}`);
-  console.log('GOOGLE_SHEET_ID=<ID da planilha criada por você>');
+  console.log('\nColoque esse valor localmente em GOOGLE_REFRESH_TOKEN no .env.');
   console.log('Nunca salve essa saída no repositório.');
 }
 

@@ -20,7 +20,13 @@
     "portal:inspect:authenticated": "tsx src/cli/inspect-authenticated-portal.ts",
     "portal:collect": "tsx src/cli/collect-portal.ts",
     "portal:check": "tsx src/cli/check-portal-login.ts",
+    "telegram:get-chat-id": "tsx src/cli/telegram-get-chat-id.ts",
+    "telegram:test": "tsx src/cli/telegram-test.ts",
     "google:authorize": "tsx src/cli/google-authorize.ts",
+    "google:test": "tsx src/cli/google-test.ts",
+    "sheets:setup": "tsx src/cli/sheets-setup.ts",
+    "sheets:test": "tsx src/cli/sheets-test.ts",
+    "config:check": "tsx src/cli/config-check.ts",
     "start": "tsx src/cli/run.ts"
   },
   "dependencies": {

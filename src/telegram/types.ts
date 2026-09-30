@@ -2,6 +2,12 @@ export interface TelegramMessage {
   message_id: number;
   text?: string;
   chat: { id: number };
+  from?: {
+    id: number;
+    first_name: string;
+    last_name?: string;
+    username?: string;
+  };
   reply_to_message?: { text?: string };
 }
 
