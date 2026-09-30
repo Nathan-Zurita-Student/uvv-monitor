@@ -16,6 +16,7 @@ const environmentSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   PORTAL_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
   DIAGNOSTICS_DIR: z.string().trim().min(1).default('artifacts/diagnostics'),
+  RUN_SLOT: z.enum(['12:00', '17:00', '21:00']).optional(),
   UVV_USERNAME: optionalSecret,
   UVV_PASSWORD: optionalSecret,
   TELEGRAM_BOT_TOKEN: optionalSecret,
@@ -24,6 +25,7 @@ const environmentSchema = z.object({
   GOOGLE_CLIENT_SECRET: optionalSecret,
   GOOGLE_REFRESH_TOKEN: optionalSecret,
   GOOGLE_SHEET_ID: optionalSecret,
+  GOOGLE_CALENDAR_ID: z.string().trim().min(1).default('primary'),
 });
 
 export type AppConfig = z.infer<typeof environmentSchema>;
@@ -47,6 +49,16 @@ export interface GoogleCredentials {
   clientSecret: string;
   refreshToken: string;
   sheetId: string;
+}
+
+export interface TelegramCredentials {
+  botToken: string;
+  chatId: string;
+}
+
+export interface GoogleClientCredentials {
+  clientId: string;
+  clientSecret: string;
 }
 
 export function requirePortalCredentials(config: AppConfig): PortalCredentials {
@@ -75,6 +87,20 @@ export function requireGoogleCredentials(config: AppConfig): GoogleCredentials {
     refreshToken: config.GOOGLE_REFRESH_TOKEN,
     sheetId: config.GOOGLE_SHEET_ID,
   };
+}
+
+export function requireGoogleClientCredentials(config: AppConfig): GoogleClientCredentials {
+  if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET) {
+    throw new Error('Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET antes da autorização OAuth.');
+  }
+  return { clientId: config.GOOGLE_CLIENT_ID, clientSecret: config.GOOGLE_CLIENT_SECRET };
+}
+
+export function requireTelegramCredentials(config: AppConfig): TelegramCredentials {
+  if (!config.TELEGRAM_BOT_TOKEN || !config.TELEGRAM_CHAT_ID) {
+    throw new Error('Configuração Telegram ausente. Defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID.');
+  }
+  return { botToken: config.TELEGRAM_BOT_TOKEN, chatId: config.TELEGRAM_CHAT_ID };
 }
 
 export function configPresence(config: AppConfig): Record<string, boolean | string> {

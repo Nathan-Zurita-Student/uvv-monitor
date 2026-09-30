@@ -19,11 +19,16 @@
     "portal:inspect": "tsx src/cli/inspect-portal.ts",
     "portal:inspect:authenticated": "tsx src/cli/inspect-authenticated-portal.ts",
     "portal:collect": "tsx src/cli/collect-portal.ts",
-    "portal:check": "tsx src/cli/check-portal-login.ts"
+    "portal:check": "tsx src/cli/check-portal-login.ts",
+    "google:authorize": "tsx src/cli/google-authorize.ts",
+    "start": "tsx src/cli/run.ts"
   },
   "dependencies": {
+    "date-fns": "^4.4.0",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^17.2.2",
     "googleapis": "^182.0.0",
+    "open": "^11.0.4",
     "pino": "^9.9.5",
     "playwright": "^1.55.1",
     "zod": "^4.1.11"

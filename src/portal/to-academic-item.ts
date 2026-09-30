@@ -3,6 +3,19 @@ import type { PortalItem } from './models.js';
 
 export function portalItemToCandidate(item: PortalItem): DetectedItemCandidate {
   const deadline = item.origin === 'CALENDAR' && item.metadata.portalEventType === '1';
+  const portalStatus = (item.status ?? '').toLowerCase();
+  const status =
+    item.origin === 'SERVICE'
+      ? /conclu[ií]do/.test(portalStatus)
+        ? 'DONE'
+        : /cancelado/.test(portalStatus)
+          ? 'IGNORED'
+          : /aguardando/.test(portalStatus)
+            ? 'WAITING'
+            : 'TODO'
+      : item.origin === 'SCHEDULE' || item.type === 'NOTICE' || item.type === 'MESSAGE'
+        ? 'WAITING'
+        : 'TODO';
   return {
     externalId: item.externalId,
     source: 'PORTAL',
@@ -17,7 +30,7 @@ export function portalItemToCandidate(item: PortalItem): DetectedItemCandidate {
       : item.officialDate && deadline
         ? { officialDeadline: item.officialDate }
         : {}),
-    status: item.type === 'NOTICE' || item.type === 'MESSAGE' ? 'WAITING' : 'TODO',
+    status,
     metadata: { ...item.metadata, origin: item.origin, portalStatus: item.status ?? '' },
   };
 }
