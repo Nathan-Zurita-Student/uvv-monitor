@@ -38,7 +38,7 @@ function cleanText(value: string, maxLength = 180): string {
   return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength - 1).trimEnd()}…` : cleaned;
 }
 
-function formatAcademicDate(value?: string): string {
+export function formatAcademicDate(value?: string): string {
   if (!value) return 'Data ainda não confirmada';
   const parsed = parseAcademicDate(value, false);
   if (Number.isNaN(parsed.getTime())) return 'Data ainda não confirmada';
@@ -59,6 +59,52 @@ function formatAcademicDate(value?: string): string {
     .format(parsed)
     .replace(':', 'h');
   return `${date}, às ${time}`;
+}
+
+export function formatPriorityTaskHeader(visible: number, total: number): string {
+  const hidden = Math.max(0, total - visible);
+  return [
+    '📋 SUAS PRIORIDADES',
+    '',
+    visible === 1
+      ? 'Encontrei 1 tarefa que merece sua atenção.'
+      : `Encontrei ${String(visible)} tarefas que merecem sua atenção.`,
+    ...(hidden > 0
+      ? [`Mais ${String(hidden)} tarefa(s) continuam salvas, mas ficaram fora deste resumo curto.`]
+      : []),
+    '',
+    'Cada tarefa virá em uma mensagem própria. Toque no botão que representa seu andamento.',
+  ].join('\n');
+}
+
+const taskStatusLabels: Record<ItemStatus, string> = {
+  TODO: '⏳ Ainda não comecei',
+  IN_PROGRESS: '🔄 Em andamento',
+  DONE: '✅ Concluído',
+  WAITING: '⏸️ Aguardando',
+  NEEDS_CONFIRMATION: '⚠️ Precisa de confirmação',
+  IGNORED: '🙈 Ignorado',
+};
+
+const taskUrgencyLabels: Record<Urgency, string> = {
+  OVERDUE: 'Atrasado',
+  TODAY: 'Hoje',
+  NEXT_24_HOURS: 'Próximas 24 horas',
+  NEXT_72_HOURS: 'Próximas 72 horas',
+  THIS_WEEK: 'Esta semana',
+  FUTURE: 'Futuro',
+  INFORMATIONAL: 'Data a confirmar',
+};
+
+export function formatPriorityTask(item: AcademicItem): string {
+  return [
+    `${urgencyIcons[item.urgency]} ${cleanText(item.title)}`,
+    '',
+    disciplineLine(item),
+    `📅 ${taskUrgencyLabels[item.urgency]} — ${formatAcademicDate(item.officialDeadline ?? item.officialDate)}`,
+    `📊 Situação atual: ${taskStatusLabels[item.status]}`,
+    `🆔 ${item.id}`,
+  ].join('\n');
 }
 
 function isActionable(item: AcademicItem): boolean {

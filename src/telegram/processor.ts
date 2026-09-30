@@ -2,6 +2,8 @@ import type { AcademicItem, ItemStatus } from '../models/academic-item.js';
 import type { AcademicRepository } from '../persistence/repository.js';
 import { parseTelegramAction } from './commands.js';
 import type { TelegramClient } from './client.js';
+import { formatPriorityTask } from './format.js';
+import { buildTaskInlineKeyboard, parseTaskCallback } from './task-actions.js';
 import type { TelegramUpdate } from './types.js';
 
 const statusLabels: Record<ItemStatus, string> = {
@@ -59,8 +61,49 @@ export async function processTelegramUpdates(
     const text = update.message?.text ?? update.callback_query?.data;
     if (!message || String(message.chat.id) !== allowedChatId || !text) continue;
 
+    const taskCallback = update.callback_query ? parseTaskCallback(text) : undefined;
+    if (update.callback_query && taskCallback) {
+      const item = byId.get(taskCallback.itemId);
+      if (!item) {
+        await client
+          .answerCallbackQuery(update.callback_query.id, 'Essa tarefa não foi encontrada.')
+          .catch(() => undefined);
+        continue;
+      }
+      const updated: AcademicItem = { ...item, status: taskCallback.status };
+      if (item.status !== taskCallback.status) {
+        await repository.upsertDetectedItems([updated]);
+        await repository.upsertTaskStatus({
+          itemId: item.id,
+          status: taskCallback.status,
+          updatedAt: now,
+          source: 'TELEGRAM',
+        });
+        byId.set(item.id.toUpperCase(), updated);
+      }
+      await client.editMessageText(
+        String(message.chat.id),
+        message.message_id,
+        formatPriorityTask(updated),
+        buildTaskInlineKeyboard(updated),
+      );
+      await repository.upsertTelegramTaskMessage({
+        itemId: item.id,
+        chatId: String(message.chat.id),
+        messageId: message.message_id,
+        lastRenderedStatus: taskCallback.status,
+        updatedAt: now,
+      });
+      await client
+        .answerCallbackQuery(update.callback_query.id, 'Status atualizado.')
+        .catch(() => undefined);
+      processed += 1;
+      continue;
+    }
     if (update.callback_query) {
-      await client.answerCallbackQuery(update.callback_query.id).catch(() => undefined);
+      await client
+        .answerCallbackQuery(update.callback_query.id, 'Esse botão não é mais válido.')
+        .catch(() => undefined);
     }
 
     const action = parseTelegramAction(text, message.reply_to_message?.text);

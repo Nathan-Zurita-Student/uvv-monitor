@@ -6,6 +6,7 @@ import type {
   ItemSource,
   ItemStatus,
   ItemType,
+  TelegramTaskMessage,
   Urgency,
   UserTaskStatus,
 } from '../models/academic-item.js';
@@ -45,6 +46,7 @@ const tables = {
     'errors',
   ],
   telegram_state: ['lastUpdateId'],
+  telegram_task_messages: ['itemId', 'chatId', 'messageId', 'lastRenderedStatus', 'updatedAt'],
 } as const;
 
 type TableName = keyof typeof tables;
@@ -211,6 +213,30 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
   async upsertTaskStatus(status: UserTaskStatus): Promise<void> {
     await this.upsertRows('user_task_status', [
       [status.itemId, status.status, status.updatedAt, status.source],
+    ]);
+  }
+
+  async listTelegramTaskMessages(): Promise<TelegramTaskMessage[]> {
+    return (await this.rows('telegram_task_messages'))
+      .filter((row) => row[0])
+      .map((row) => ({
+        itemId: row[0] ?? '',
+        chatId: row[1] ?? '',
+        messageId: Number(row[2] ?? 0),
+        lastRenderedStatus: (row[3] ?? 'TODO') as ItemStatus,
+        updatedAt: row[4] ?? '',
+      }));
+  }
+
+  async upsertTelegramTaskMessage(message: TelegramTaskMessage): Promise<void> {
+    await this.upsertRows('telegram_task_messages', [
+      [
+        message.itemId,
+        message.chatId,
+        String(message.messageId),
+        message.lastRenderedStatus,
+        message.updatedAt,
+      ],
     ]);
   }
 

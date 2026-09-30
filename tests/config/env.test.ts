@@ -6,6 +6,7 @@ describe('configuração de ambiente', () => {
     const config = loadConfig({});
     expect(config.DRY_RUN).toBe(true);
     expect(config.TZ).toBe('America/Sao_Paulo');
+    expect(config.TELEGRAM_WEBHOOK_ENABLED).toBe(false);
   });
 
   it('aceita integrações opcionais vazias do arquivo de exemplo', () => {

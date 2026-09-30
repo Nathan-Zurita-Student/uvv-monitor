@@ -13,6 +13,7 @@ async function main(): Promise<void> {
   console.log('user_task_status: OK');
   console.log('run_history: OK');
   console.log('telegram_state: OK');
+  console.log('telegram_task_messages: OK');
 }
 
 main().catch((error: unknown) => {

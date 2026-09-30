@@ -7,17 +7,19 @@ depende de API paga de IA.
 ## Estado do projeto
 
 - Login UVV validado contra o Portal real em 30/09/2026.
-- Coleta read-only de Mensagens, Minhas Turmas, Atendimento, Calendário de Atividades e Quadro de
-  Horários.
+- Coleta read-only de Mensagens, blogs e posts de Minhas Turmas, Atendimento, Calendário de
+  Atividades e Quadro de Horários.
 - Gmail read-only, Google Calendar, Google Sheets e Telegram implementados; a validação externa
   depende da configuração OAuth/Bot do usuário.
-- Hash, deduplicação, mudanças de prazo, prioridade, check-ins, resumos e scheduler implementados.
+- Hash, deduplicação entre posts/calendário, mudanças de prazo, prioridade, tarefas interativas,
+  resumos e scheduler implementados.
+- Webhook opcional e gratuito em Google Apps Script para botões inline com resposta imediata.
 - GitHub Actions configurado para 12h, 17h e 21h em `America/Sao_Paulo`.
 - `DRY_RUN=true` é o padrão.
 
-Limitação conhecida: a listagem e os metadados de mensagens/posts do Portal são coletados, mas a
-extração profunda de todos os anexos e conteúdos de páginas internas ainda depende de mais
-fixtures reais da interface UVV.
+Limitação conhecida: o acesso ao Ambiente Virtual depende do endpoint SSO da própria UVV. Quando
+esse endpoint falha, o bot informa explicitamente que o AVA não foi verificado e continua as demais
+fontes.
 
 ## Arquitetura
 
@@ -37,6 +39,7 @@ src/
   utils/             datas, hash, normalização e logs
 tests/
 .github/workflows/monitor.yml
+apps-script/          webhook gratuito para interações imediatas no Telegram
 ```
 
 Cada fonte falha isoladamente. CAPTCHA/MFA ou falha no Portal não impede Gmail, Calendar e o resumo
@@ -108,6 +111,19 @@ Comandos:
 Respostas como “já fiz”, “estou fazendo” e “ainda não fiz” também funcionam quando incluem o ID ou
 são respostas a uma mensagem que contém o ID.
 
+### Botões inline em tempo real
+
+Por padrão, `TELEGRAM_WEBHOOK_ENABLED=false` mantém o modo `getUpdates`, processado apenas durante
+as execuções agendadas. Para receber cliques imediatamente e editar a própria mensagem da tarefa,
+publique o Web App descrito em [`apps-script/README.md`](apps-script/README.md).
+
+Com o webhook ativo, cada uma das três prioridades principais recebe uma mensagem própria com
+botões de “Não comecei”, “Em andamento”, “Concluído”, “Aguardando” e um link para a fonte original.
+O callback carrega o ID persistente da tarefa, nunca sua posição na lista. A aba
+`telegram_task_messages` guarda a última mensagem enviada para auditoria e continuidade.
+Enquanto o webhook estiver desativado, as tarefas continuam sendo enviadas individualmente, mas
+sem botões inline, evitando controles que ficariam carregando até a próxima execução.
+
 ## Google Cloud e OAuth
 
 1. Crie um projeto em Google Cloud Console.
@@ -122,8 +138,8 @@ O navegador solicitará apenas leitura do Gmail, acesso ao Calendar e à planilh
 o `GOOGLE_REFRESH_TOKEN` no terminal e não o salva. Copie-o diretamente para os GitHub Secrets.
 
 Crie uma planilha vazia e copie o trecho entre `/d/` e `/edit` da URL para `GOOGLE_SHEET_ID`. Na
-primeira execução, o sistema cria as abas `detected_items`, `user_task_status`, `run_history` e
-`telegram_state`.
+primeira execução, o sistema cria as abas `detected_items`, `user_task_status`, `run_history`,
+`telegram_state` e `telegram_task_messages`.
 
 ## Google Calendar
 
@@ -143,6 +159,7 @@ UVV_USERNAME
 UVV_PASSWORD
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
+TELEGRAM_WEBHOOK_ENABLED # false até publicar o Apps Script; depois true
 GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
 GOOGLE_REFRESH_TOKEN
@@ -193,7 +210,8 @@ npm run build
 ```
 
 Os testes cobrem hash, deduplicação, mudança de prazo, prioridade, timezone, quarta/domingo,
-Calendar, duplicatas, comandos Telegram, status, Gmail e normalização.
+Calendar, duplicatas, comandos Telegram, callbacks validados, teclados inline, status, Gmail e
+normalização.
 
 ## Segurança
 
@@ -201,6 +219,8 @@ Calendar, duplicatas, comandos Telegram, status, Gmail e normalização.
 - Senhas e tokens são censurados nos logs.
 - O Portal nunca recebe ações de alteração acadêmica.
 - O Telegram aceita comandos somente do `TELEGRAM_CHAT_ID` configurado.
+- O webhook valida um segredo não versionado, o chat autorizado, o ID da tarefa e uma lista fechada
+  de status.
 - A primeira execução deve permanecer em `DRY_RUN=true`.
 
 ## Troubleshooting
@@ -221,6 +241,12 @@ Revogue o acesso anterior na Conta Google e execute `npm run google:authorize` n
 ### GitHub Actions atrasou
 
 Schedules podem atrasar alguns minutos. `RUN_SLOT` preserva a janela acadêmica correta.
+
+### Botão inline fica carregando
+
+O webhook ainda não foi publicado/registrado ou `TELEGRAM_WEBHOOK_ENABLED` foi ativado cedo demais.
+Siga `apps-script/README.md`. Para voltar ao polling, execute `deleteWebhook` no Apps Script e
+defina a variável como `false`.
 
 ### Uma fonte falhou
 

@@ -15,17 +15,18 @@ import { GoogleSheetsAcademicRepository } from '../persistence/google-sheets.js'
 import { createPortalBrowserSession } from '../portal/browser.js';
 import { ensurePortalAuthenticated } from '../portal/auth.js';
 import { collectPortalSafely } from '../portal/safe-collector.js';
-import { prioritizeItems, selectProgressCheckins } from '../prioritization/priority.js';
+import { prioritizeItems } from '../prioritization/priority.js';
 import { verificationWindow, type DailySlot, isWeeklyReviewRun } from './windows.js';
 import { TelegramClient } from '../telegram/client.js';
 import {
   format72HourSummary,
   formatNovelty,
-  formatPriorities,
-  formatProgressCheck,
+  formatPriorityTask,
+  formatPriorityTaskHeader,
   formatWeeklyReview,
 } from '../telegram/format.js';
 import { processTelegramUpdates } from '../telegram/processor.js';
+import { buildTaskInlineKeyboard, isTrackableTask } from '../telegram/task-actions.js';
 import { logger } from '../utils/logger.js';
 
 export async function runMonitor(
@@ -48,15 +49,17 @@ export async function runMonitor(
   const telegram = new TelegramClient(telegramCredentials.botToken, telegramCredentials.chatId);
   await repository.initialize();
 
-  try {
-    await processTelegramUpdates(
-      telegram,
-      repository,
-      telegramCredentials.chatId,
-      now.toISOString(),
-    );
-  } catch (error) {
-    run.errors.push(`Telegram getUpdates: ${error instanceof Error ? error.message : 'erro'}`);
+  if (!config.TELEGRAM_WEBHOOK_ENABLED) {
+    try {
+      await processTelegramUpdates(
+        telegram,
+        repository,
+        telegramCredentials.chatId,
+        now.toISOString(),
+      );
+    } catch (error) {
+      run.errors.push(`Telegram getUpdates: ${error instanceof Error ? error.message : 'erro'}`);
+    }
   }
 
   const candidates: DetectedItemCandidate[] = [];
@@ -147,22 +150,28 @@ export async function runMonitor(
       );
     } else {
       for (const item of changedNow) {
-        if (item.metadata?.contextOnly !== 'true') await telegram.sendMessage(formatNovelty(item));
+        if (item.metadata?.contextOnly !== 'true' && !isTrackableTask(item)) {
+          await telegram.sendMessage(formatNovelty(item));
+        }
       }
     }
     const allItems = prioritizeItems(await repository.listDetectedItems(), now);
-    const priorities = formatPriorities(allItems);
-    if (priorities) await telegram.sendMessage(priorities);
-    const statusMap = new Map(
-      (await repository.listTaskStatuses()).map((status) => [status.itemId, status.updatedAt]),
-    );
-    const checkins = selectProgressCheckins(allItems, statusMap, now).slice(0, 1);
-    for (const item of checkins) {
-      await telegram.sendMessage(formatProgressCheck(item), {
-        replyKeyboard: [
-          [`✅ Já fiz — ${item.id}`, `🔄 Estou fazendo — ${item.id}`],
-          [`⏳ Ainda não comecei — ${item.id}`, `🙈 Ignorar — ${item.id}`],
-        ],
+    const allTasks = allItems.filter(isTrackableTask);
+    const visibleTasks = allTasks.slice(0, 3);
+    if (visibleTasks.length > 0) {
+      await telegram.sendMessage(formatPriorityTaskHeader(visibleTasks.length, allTasks.length));
+    }
+    for (const item of visibleTasks) {
+      const message = await telegram.sendMessage(
+        formatPriorityTask(item),
+        config.TELEGRAM_WEBHOOK_ENABLED ? { inlineKeyboard: buildTaskInlineKeyboard(item) } : {},
+      );
+      await repository.upsertTelegramTaskMessage({
+        itemId: item.id,
+        chatId: telegramCredentials.chatId,
+        messageId: message.message_id,
+        lastRenderedStatus: item.status,
+        updatedAt: now.toISOString(),
       });
     }
     if (slot === '21:00') {

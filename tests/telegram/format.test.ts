@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AcademicItem } from '../../src/models/academic-item.js';
-import { formatPriorities, formatProgressCheck } from '../../src/telegram/format.js';
+import {
+  formatPriorities,
+  formatPriorityTask,
+  formatProgressCheck,
+} from '../../src/telegram/format.js';
 
 function item(overrides: Partial<AcademicItem> = {}): AcademicItem {
   return {
@@ -45,5 +49,14 @@ describe('mensagens naturais do Telegram', () => {
 
   it('não gera resumo quando só existem informações sem ação', () => {
     expect(formatPriorities([item({ urgency: 'INFORMATIONAL' })])).toBe('');
+  });
+
+  it('formata uma tarefa individual com situação natural', () => {
+    const result = formatPriorityTask(item());
+    expect(result).toContain('🟠 Entregar AOP');
+    expect(result).toContain('📅 Próximas 72 horas — sexta-feira, 02/10/2026, às 23h59');
+    expect(result).toContain('📊 Situação atual: ⏳ Ainda não comecei');
+    expect(result).toContain('🆔 UVV-ABC123');
+    expect(result).not.toContain('https://');
   });
 });

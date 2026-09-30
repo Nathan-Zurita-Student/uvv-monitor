@@ -1,4 +1,4 @@
-import type { AcademicItem, UserTaskStatus } from '../models/academic-item.js';
+import type { AcademicItem, TelegramTaskMessage, UserTaskStatus } from '../models/academic-item.js';
 import type { RunHistory, TelegramState } from '../models/run.js';
 import type { AcademicRepository } from './repository.js';
 
@@ -6,6 +6,7 @@ export class InMemoryAcademicRepository implements AcademicRepository {
   readonly items = new Map<string, AcademicItem>();
   readonly statuses = new Map<string, UserTaskStatus>();
   readonly runs: RunHistory[] = [];
+  readonly telegramTaskMessages = new Map<string, TelegramTaskMessage>();
   telegramState: TelegramState = { lastUpdateId: 0 };
 
   initialize(): Promise<void> {
@@ -27,6 +28,15 @@ export class InMemoryAcademicRepository implements AcademicRepository {
 
   upsertTaskStatus(status: UserTaskStatus): Promise<void> {
     this.statuses.set(status.itemId, structuredClone(status));
+    return Promise.resolve();
+  }
+
+  listTelegramTaskMessages(): Promise<TelegramTaskMessage[]> {
+    return Promise.resolve(Array.from(this.telegramTaskMessages.values()));
+  }
+
+  upsertTelegramTaskMessage(message: TelegramTaskMessage): Promise<void> {
+    this.telegramTaskMessages.set(message.itemId, structuredClone(message));
     return Promise.resolve();
   }
 

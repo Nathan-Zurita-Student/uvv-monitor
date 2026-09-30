@@ -65,3 +65,11 @@ export interface UserTaskStatus {
   updatedAt: string;
   source: 'TELEGRAM' | 'SYSTEM' | 'USER';
 }
+
+export interface TelegramTaskMessage {
+  itemId: string;
+  chatId: string;
+  messageId: number;
+  lastRenderedStatus: ItemStatus;
+  updatedAt: string;
+}
