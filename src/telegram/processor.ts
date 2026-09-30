@@ -39,6 +39,7 @@ export async function processTelegramUpdates(
     if (!message || String(message.chat.id) !== allowedChatId || !text) continue;
 
     const action = parseTelegramAction(text, message.reply_to_message?.text);
+    if (action.kind === 'IGNORE') continue;
     if (action.kind === 'UNKNOWN') {
       await client.sendMessage(
         `${action.reason} Use /feito UVV-XXXXXX, /fazendo UVV-XXXXXX, /pendente UVV-XXXXXX, /ignorar UVV-XXXXXX ou /status UVV-XXXXXX.`,

@@ -3,6 +3,7 @@ import type { ItemStatus } from '../models/academic-item.js';
 export type TelegramAction =
   | { kind: 'SET_STATUS'; itemId: string; status: ItemStatus }
   | { kind: 'GET_STATUS'; itemId: string }
+  | { kind: 'IGNORE' }
   | { kind: 'UNKNOWN'; reason: string };
 
 const idPattern = /\bUVV-[A-Z0-9]{4,10}\b/i;
@@ -38,15 +39,21 @@ export function parseTelegramAction(text: string, replyText?: string): TelegramA
     return { kind: 'SET_STATUS', itemId, status: statuses[command ?? ''] ?? 'TODO' };
   }
 
+  const todoPhrase = /\b(nao comecei|ainda nao fiz|nao fiz)\b/.test(normalized);
+  const progressPhrase = /\b(estou fazendo|ja comecei|estou preparando|em andamento)\b/.test(
+    normalized,
+  );
+  const donePhrase = /\b(ja fiz|terminei|concluido|conclui)\b/.test(normalized);
+  if (!todoPhrase && !progressPhrase && !donePhrase) return { kind: 'IGNORE' };
   if (!itemId) return { kind: 'UNKNOWN', reason: 'Não foi possível identificar a tarefa.' };
-  if (/\b(nao comecei|ainda nao fiz|nao fiz)\b/.test(normalized)) {
+  if (todoPhrase) {
     return { kind: 'SET_STATUS', itemId, status: 'TODO' };
   }
-  if (/\b(estou fazendo|ja comecei|estou preparando|em andamento)\b/.test(normalized)) {
+  if (progressPhrase) {
     return { kind: 'SET_STATUS', itemId, status: 'IN_PROGRESS' };
   }
-  if (/\b(ja fiz|terminei|concluido|conclui)\b/.test(normalized)) {
+  if (donePhrase) {
     return { kind: 'SET_STATUS', itemId, status: 'DONE' };
   }
-  return { kind: 'UNKNOWN', reason: 'Resposta de progresso não reconhecida.' };
+  return { kind: 'IGNORE' };
 }
