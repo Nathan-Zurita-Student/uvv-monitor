@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AcademicItem } from '../../src/models/academic-item.js';
-import { buildCalendarEvent, syncCalendarEvent } from '../../src/calendar/service.js';
+import {
+  buildCalendarEvent,
+  isCalendarSyncCandidate,
+  syncCalendarEvent,
+} from '../../src/calendar/service.js';
 import type {
   CalendarEventInput,
   CalendarEventRecord,
@@ -84,5 +88,30 @@ describe('sincronização com Google Calendar', () => {
       eventId: 'event-0',
     });
     expect(fake.insert).not.toHaveBeenCalled();
+  });
+
+  it('não assume controle de evento pessoal visualmente equivalente', async () => {
+    const desired = buildCalendarEvent(item, '2026-09-30T12:00:00-03:00');
+    expect(desired).toBeDefined();
+    const personalEvent = {
+      ...desired!,
+      extendedProperties: { private: {} },
+    };
+    const fake = gateway([personalEvent]);
+    await expect(syncCalendarEvent(fake.value, item, false)).resolves.toEqual({
+      action: 'SKIPPED_EQUIVALENT',
+    });
+    expect(fake.insert).not.toHaveBeenCalled();
+    expect(fake.update).not.toHaveBeenCalled();
+  });
+
+  it('seleciona somente tarefas futuras, oficiais e abertas para sincronização', () => {
+    expect(isCalendarSyncCandidate(item)).toBe(true);
+    expect(isCalendarSyncCandidate({ ...item, status: 'DONE' })).toBe(false);
+    expect(isCalendarSyncCandidate({ ...item, urgency: 'OVERDUE' })).toBe(false);
+    expect(
+      isCalendarSyncCandidate({ ...item, status: 'NEEDS_CONFIRMATION', urgency: 'FUTURE' }),
+    ).toBe(false);
+    expect(isCalendarSyncCandidate({ ...item, type: 'CLASS', urgency: 'FUTURE' })).toBe(false);
   });
 });

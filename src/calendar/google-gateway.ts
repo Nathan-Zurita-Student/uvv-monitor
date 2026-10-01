@@ -29,13 +29,12 @@ export class GoogleCalendarGateway implements CalendarGateway {
     this.calendar = google.calendar({ version: 'v3', auth: createGoogleOAuthClient(credentials) });
   }
 
-  async list(timeMin: string, timeMax: string, itemId: string): Promise<CalendarEventRecord[]> {
+  async list(timeMin: string, timeMax: string): Promise<CalendarEventRecord[]> {
     const response = await this.calendar.events.list({
       calendarId: this.calendarId,
       timeMin,
       timeMax,
       singleEvents: true,
-      privateExtendedProperty: [`uvvItemId=${itemId}`],
       maxResults: 20,
     });
     return (response.data.items ?? []).flatMap((event) => {

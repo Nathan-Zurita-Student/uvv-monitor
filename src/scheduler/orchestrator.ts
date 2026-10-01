@@ -6,7 +6,7 @@ import {
   requireTelegramCredentials,
 } from '../config/env.js';
 import { GoogleCalendarGateway } from '../calendar/google-gateway.js';
-import { syncCalendarEvent } from '../calendar/service.js';
+import { isCalendarSyncCandidate, syncCalendarEvent } from '../calendar/service.js';
 import { GmailGoogleGateway } from '../gmail/google-gateway.js';
 import { collectRelevantGmail } from '../gmail/collector.js';
 import type { RunHistory } from '../models/run.js';
@@ -132,16 +132,22 @@ export async function runMonitor(
   });
   await repository.upsertDetectedItems(prioritized);
   run.itemsFound = candidates.length;
+  const allItems = prioritizeItems(await repository.listDetectedItems(), now);
 
   const calendar = new GoogleCalendarGateway(googleCredentials, config.GOOGLE_CALENDAR_ID);
   try {
-    for (const item of changedNow) {
-      if (['OVERDUE', 'INFORMATIONAL'].includes(item.urgency)) continue;
-      const result = await syncCalendarEvent(calendar, item, config.DRY_RUN, now.toISOString());
+    const calendarResults: Record<string, number> = {};
+    for (const item of allItems.filter(isCalendarSyncCandidate)) {
+      const result = await syncCalendarEvent(calendar, item, config.DRY_RUN, item.firstSeenAt);
+      calendarResults[result.action] = (calendarResults[result.action] ?? 0) + 1;
       if ('eventId' in result && item.calendarEventId !== result.eventId) {
         await repository.upsertDetectedItems([{ ...item, calendarEventId: result.eventId }]);
       }
     }
+    logger.info(
+      { module: 'Calendar', results: calendarResults },
+      'Eventos acadêmicos sincronizados',
+    );
     run.calendarStatus = 'SUCCESS';
   } catch (error) {
     run.calendarStatus = 'FAILED';
@@ -169,7 +175,6 @@ export async function runMonitor(
         }
       }
     }
-    const allItems = prioritizeItems(await repository.listDetectedItems(), now);
     const allTasks = allItems.filter(isTrackableTask);
     const visibleTasks = allTasks.slice(0, 3);
     if (visibleTasks.length > 0) {

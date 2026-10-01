@@ -4,11 +4,33 @@ import type { CalendarEventDate, CalendarEventInput, CalendarGateway } from './t
 
 export type CalendarSyncResult =
   | { action: 'SKIPPED_UNCONFIRMED' }
+  | { action: 'SKIPPED_EQUIVALENT' }
   | { action: 'UNCHANGED'; eventId: string }
   | { action: 'WOULD_CREATE' }
   | { action: 'WOULD_UPDATE'; eventId: string }
   | { action: 'CREATED'; eventId: string }
   | { action: 'UPDATED'; eventId: string };
+
+const calendarItemTypes = new Set<AcademicItem['type']>([
+  'EXAM',
+  'ASSIGNMENT',
+  'AOP',
+  'ACTIVITY',
+  'EVENT',
+  'SCHEDULE_CHANGE',
+  'DOCUMENT',
+  'SERVICE_REQUEST',
+]);
+
+export function isCalendarSyncCandidate(item: AcademicItem): boolean {
+  return (
+    calendarItemTypes.has(item.type) &&
+    !['DONE', 'IGNORED', 'NEEDS_CONFIRMATION'].includes(item.status) &&
+    !['OVERDUE', 'INFORMATIONAL'].includes(item.urgency) &&
+    item.metadata?.contextOnly !== 'true' &&
+    Boolean(item.officialDeadline ?? item.officialDate)
+  );
+}
 
 function eventDate(
   value: string,
@@ -88,6 +110,14 @@ function equivalent(left: CalendarEventInput, right: CalendarEventInput): boolea
   return stableStringify(comparable(left)) === stableStringify(comparable(right));
 }
 
+function sameVisibleEvent(left: CalendarEventInput, right: CalendarEventInput): boolean {
+  return (
+    normalizeText(left.summary) === normalizeText(right.summary) &&
+    stableStringify(left.start) === stableStringify(right.start) &&
+    stableStringify(left.end) === stableStringify(right.end)
+  );
+}
+
 function searchWindow(value: string): { timeMin: string; timeMax: string } {
   const instant = new Date(
     /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -122,6 +152,9 @@ export async function syncCalendarEvent(
     if (dryRun) return { action: 'WOULD_UPDATE', eventId: current.id };
     const updated = await gateway.update(current.id, desired);
     return { action: 'UPDATED', eventId: updated.id };
+  }
+  if (existing.some((event) => sameVisibleEvent(event, desired))) {
+    return { action: 'SKIPPED_EQUIVALENT' };
   }
   if (dryRun) return { action: 'WOULD_CREATE' };
   const created = await gateway.insert(desired);
