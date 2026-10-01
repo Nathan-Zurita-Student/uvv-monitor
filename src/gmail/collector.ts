@@ -1,5 +1,5 @@
 import type { DetectedItemCandidate } from '../persistence/deduplication.js';
-import { inferItemType } from '../portal/parsers.js';
+import { extractPortalDates, inferItemType } from '../portal/parsers.js';
 import type { GmailGoogleGateway } from './google-gateway.js';
 import { parseGmailMessage } from './parser.js';
 import { classifyGmailRelevance } from './relevance.js';
@@ -15,13 +15,17 @@ export async function collectRelevantGmail(
     const relevance = classifyGmailRelevance(message);
     if (!relevance.relevant) continue;
     const combined = `${message.subject}\n${message.body}`;
+    const type = inferItemType(combined);
+    const receivedYear = new Date(message.date).getFullYear();
+    const referenceYear = Number.isFinite(receivedYear) ? receivedYear : new Date().getFullYear();
     candidates.push({
       externalId: `gmail:${message.messageId}`,
       source: 'GMAIL',
       sourceUrl: `https://mail.google.com/mail/u/0/#all/${message.threadId}`,
       title: message.subject || '(sem assunto)',
       description: message.body.slice(0, 10_000),
-      type: inferItemType(combined),
+      type,
+      ...extractPortalDates(combined, type, referenceYear),
       status: 'TODO',
       metadata: {
         threadId: message.threadId,

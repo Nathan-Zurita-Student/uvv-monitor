@@ -39,7 +39,11 @@ export function classifyGmailRelevance(message: ParsedGmailMessage): RelevanceRe
     reasons.push('remetente @uvv.br');
   }
   for (const term of academicTerms) {
-    if (combined.includes(term)) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const found = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, 'iu').test(
+      combined,
+    );
+    if (found) {
       score += ['prova', 'avaliação', 'trabalho', 'aop', 'pendência'].includes(term) ? 2 : 1;
       reasons.push(`termo:${term}`);
     }

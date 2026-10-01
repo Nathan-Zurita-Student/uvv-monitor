@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AcademicItem } from '../../src/models/academic-item.js';
 import {
+  formatCompleteTaskSummary,
   formatPriorities,
   formatPriorityTask,
   formatProgressCheck,
@@ -58,5 +59,20 @@ describe('mensagens naturais do Telegram', () => {
     expect(result).toContain('📊 Situação atual: ⏳ Ainda não comecei');
     expect(result).toContain('🆔 UVV-ABC123');
     expect(result).not.toContain('https://');
+  });
+
+  it('inclui todas as pendências no resumo completo e preserva os links', () => {
+    const items = Array.from({ length: 9 }, (_, index) =>
+      item({
+        id: `UVV-${String(index).padStart(6, '0')}`,
+        title: `Tarefa ${String(index + 1)}`,
+      }),
+    );
+    const messages = formatCompleteTaskSummary(items);
+    const combined = messages.join('\n');
+    expect(combined).toContain('Você tem 9 pendência(s) aberta(s)');
+    expect(combined).toContain('Tarefa 1');
+    expect(combined).toContain('Tarefa 9');
+    expect(combined).toContain('https://aluno.uvv.br');
   });
 });

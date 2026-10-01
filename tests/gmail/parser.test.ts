@@ -65,4 +65,19 @@ describe('Gmail', () => {
       }).relevant,
     ).toBe(false);
   });
+
+  it('não confunde ava dentro de palavras comuns com Ambiente Virtual', () => {
+    expect(
+      classifyGmailRelevance({
+        messageId: 'm3',
+        threadId: 't3',
+        from: 'marketing@example.com',
+        subject: 'Crie tudo o que quiser',
+        date: '2026-09-30',
+        body: 'Veja como eu trabalhava e criava projetos.',
+        links: [],
+        attachments: [],
+      }).relevant,
+    ).toBe(false);
+  });
 });

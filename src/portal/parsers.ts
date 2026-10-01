@@ -86,6 +86,26 @@ export function extractPortalDates(
     }
   }
 
+  if (['ASSIGNMENT', 'AOP', 'ACTIVITY', 'DOCUMENT'].includes(type)) {
+    const taskDate =
+      /(?:prazo|entrega|entregar|apresentacao|apresentar|atividade|trabalho)[^.!?]{0,180}?(?:dia\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:\s+(?:as\s+)?(\d{1,2}):(\d{2}))?/i.exec(
+        normalized,
+      );
+    if (taskDate) {
+      const rawYear = Number(taskDate[3] ?? referenceYear);
+      const year = rawYear < 100 ? 2000 + rawYear : rawYear;
+      const date = isoDate(year, Number(taskDate[2]), Number(taskDate[1]));
+      if (date) {
+        return {
+          officialDeadline:
+            taskDate[4] && taskDate[5]
+              ? `${date}T${taskDate[4].padStart(2, '0')}:${taskDate[5]}:00`
+              : date,
+        };
+      }
+    }
+  }
+
   if (type === 'EXAM') {
     const writtenDate =
       /(?:prova|avaliacao|exame)[^.!?]{0,160}?(?:dia\s+)?(\d{1,2})\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+de\s+(\d{4}))?/i.exec(

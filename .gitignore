@@ -18,6 +18,7 @@ artifacts/
 test-results/
 playwright-report/
 screenshots/
+tmp/
 *.har
 *.trace.zip
 

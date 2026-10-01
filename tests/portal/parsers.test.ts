@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractPortalDates,
   inferItemType,
   parseCalendarResponse,
   parseClassCards,
@@ -91,6 +92,15 @@ describe('parsers do Portal observados ao vivo', () => {
       referenceYear: 2026,
     });
     expect(parsed.officialDeadline).toBe('2026-09-23T23:00:00');
+  });
+
+  it.each([
+    ['Trab 1 Bim: entrega e apresentação no lab 12 - dia 14/10', '2026-10-14'],
+    ['Entrega do trabalho no lab 8 - dia 19/10', '2026-10-19'],
+  ])('extrai data curta confirmada de tarefa: %s', (text, expected) => {
+    expect(extractPortalDates(text, 'ASSIGNMENT', 2026)).toEqual({
+      officialDeadline: expected,
+    });
   });
 
   it('mapeia histórico oficial de atendimento', () => {

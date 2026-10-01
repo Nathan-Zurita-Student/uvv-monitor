@@ -62,19 +62,56 @@ export function formatAcademicDate(value?: string): string {
 }
 
 export function formatPriorityTaskHeader(visible: number, total: number): string {
-  const hidden = Math.max(0, total - visible);
   return [
-    '📋 SUAS PRIORIDADES',
+    'COMO ESTÁ SEU PROGRESSO?',
     '',
     visible === 1
-      ? 'Encontrei 1 tarefa que merece sua atenção.'
-      : `Encontrei ${String(visible)} tarefas que merecem sua atenção.`,
-    ...(hidden > 0
-      ? [`Mais ${String(hidden)} tarefa(s) continuam salvas, mas ficaram fora deste resumo curto.`]
-      : []),
+      ? 'Vou perguntar sobre a tarefa mais importante agora.'
+      : `Vou perguntar sobre as ${String(visible)} tarefas mais importantes agora.`,
+    `As ${String(total)} pendência(s) abertas aparecem no resumo completo enviado acima.`,
     '',
     'Cada tarefa virá em uma mensagem própria. Toque no botão que representa seu andamento.',
   ].join('\n');
+}
+
+const typeLabels: Partial<Record<AcademicItem['type'], string>> = {
+  EXAM: 'PROVA',
+  ASSIGNMENT: 'TRABALHO/ENTREGA',
+  AOP: 'AOP',
+  ACTIVITY: 'ATIVIDADE',
+  DOCUMENT: 'DOCUMENTO',
+  SERVICE_REQUEST: 'ATENDIMENTO',
+  SCHEDULE_CHANGE: 'ALTERAÇÃO',
+  EVENT: 'EVENTO',
+};
+
+export function formatCompleteTaskSummary(items: AcademicItem[]): string[] {
+  const open = items.filter(
+    (item) => !['DONE', 'IGNORED'].includes(item.status) && item.metadata?.contextOnly !== 'true',
+  );
+  if (open.length === 0) return [];
+  const blocks = open.map((item) =>
+    [
+      `${urgencyIcons[item.urgency]} [${typeLabels[item.type] ?? 'PENDÊNCIA'}] ${cleanText(item.title)}`,
+      disciplineLine(item),
+      `📅 ${formatAcademicDate(item.officialDeadline ?? item.officialDate)}`,
+      `📊 ${taskStatusLabels[item.status]}`,
+      sourceLinkLine(item),
+      `🆔 ${item.id}`,
+    ].join('\n'),
+  );
+  const messages: string[] = [];
+  let current = `AGENDA ACADÊMICA COMPLETA\n\nVocê tem ${String(open.length)} pendência(s) aberta(s). Nada foi escondido deste resumo.`;
+  for (const block of blocks) {
+    if (`${current}\n\n${block}`.length > 3_800) {
+      messages.push(current);
+      current = `AGENDA ACADÊMICA COMPLETA — CONTINUAÇÃO\n\n${block}`;
+    } else {
+      current += `\n\n${block}`;
+    }
+  }
+  messages.push(current);
+  return messages;
 }
 
 const taskStatusLabels: Record<ItemStatus, string> = {

@@ -37,7 +37,7 @@ export class GmailGoogleGateway {
   }
 
   async listRelevantCandidates(after: Date): Promise<string[]> {
-    const query = `after:${String(Math.floor(after.getTime() / 1000))} (from:(uvv.br) OR {prova avaliação trabalho AOP atividade estágio secretaria coordenação portal disciplina})`;
+    const query = `after:${String(Math.floor(after.getTime() / 1000))} {from:(@uvv.br) "prova" "avaliação" "trabalho" "AOP" "atividade" "estágio" "secretaria" "coordenação" "portal do aluno" "disciplina"}`;
     const ids: string[] = [];
     let pageToken: string | undefined;
     do {
@@ -50,6 +50,7 @@ export class GmailGoogleGateway {
       ids.push(
         ...(response.data.messages ?? []).flatMap((message) => (message.id ? [message.id] : [])),
       );
+      if (ids.length >= 200) return ids.slice(0, 200);
       pageToken = response.data.nextPageToken ?? undefined;
     } while (pageToken);
     return ids;

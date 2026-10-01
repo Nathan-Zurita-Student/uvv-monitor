@@ -1,11 +1,15 @@
 import type { Page, Response } from 'playwright';
 import { parseMoodleActivity, type MoodleActivityInput } from '../moodle/activity-parser.js';
+import { logger } from '../utils/logger.js';
 import { PORTAL_URLS } from './constants.js';
+import { parseExamSchedulePdf } from './exam-schedule.js';
 import type { ClassCardInput, ClassPostPageInput, MessageLinkInput, PortalItem } from './models.js';
 import {
   parseCalendarResponse,
   parseClassCards,
   parseClassPostPage,
+  extractPortalDates,
+  inferItemType,
   parseMessageLinks,
   parseWorkflowResponse,
 } from './parsers.js';
@@ -32,7 +36,87 @@ export async function collectMessages(page: Page): Promise<PortalItem[]> {
         href: (link as HTMLAnchorElement).href,
       })),
     );
-  return parseMessageLinks(inputs);
+  const summaries = parseMessageLinks(inputs);
+  await navigate(page, PORTAL_URLS.classes);
+  const enrolledClasses = new Map<string, Set<string>>();
+  for (const heading of await page.locator('.card-turma-head').allTextContents()) {
+    const classLine = heading
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /\b[A-Z]{1,3}\d+[A-Za-z.]?\s*-/i.test(line));
+    const match = classLine ? /^([A-Z]{1,3}\d+[A-Za-z.]?)\s*-\s*(.+)$/i.exec(classLine) : null;
+    if (!match?.[1] || !match[2]) continue;
+    const cohort = match[1].replace(/\.$/, '').toUpperCase();
+    const disciplines = enrolledClasses.get(cohort) ?? new Set<string>();
+    disciplines.add(match[2].trim());
+    enrolledClasses.set(cohort, disciplines);
+  }
+  const referenceYear = Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+    }).format(new Date()),
+  );
+  const results: PortalItem[] = [];
+  for (const summary of summaries) {
+    await navigate(page, summary.sourceUrl);
+    const panels = (await page.locator('.box-mensagens, .panel-body').allTextContents())
+      .map((text) => text.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    const body = panels.sort((left, right) => right.length - left.length)[0] ?? summary.description;
+    const links = await page
+      .locator('.box-mensagens a[href], .panel-body a[href]')
+      .evaluateAll((elements) =>
+        elements.map((link) => ({
+          text: link.textContent ?? '',
+          href: (link as HTMLAnchorElement).href,
+        })),
+      );
+    const type = inferItemType(`${summary.title} ${body}`);
+    results.push({
+      ...summary,
+      description: body,
+      type,
+      ...extractPortalDates(`${summary.title} ${body}`, type, referenceYear),
+      links: [summary.sourceUrl, ...links.map((link) => link.href)],
+      metadata: { ...summary.metadata, relatedLinks: JSON.stringify(links) },
+    });
+
+    if (!/calend[aá]rio\s+de\s+provas/i.test(summary.title)) continue;
+    const documentLink = links.find((link) => /sharepoint\.com/i.test(link.href));
+    if (!documentLink) continue;
+    try {
+      const pdfResponse = page.waitForResponse(
+        async (response) =>
+          (await response.allHeaders())['content-type']
+            ?.toLowerCase()
+            .includes('application/pdf') ?? false,
+        { timeout: 60_000 },
+      );
+      await navigate(page, documentLink.href);
+      const response = await pdfResponse;
+      results.push(
+        ...(await parseExamSchedulePdf(
+          new Uint8Array(await response.body()),
+          enrolledClasses,
+          referenceYear,
+          summary.sourceUrl,
+          documentLink.href,
+        )),
+      );
+    } catch (error) {
+      // Mantém o comunicado coletado. A próxima execução tentará novamente o anexo.
+      logger.warn(
+        {
+          module: 'Portal',
+          source: 'Calendário oficial de provas',
+          error: error instanceof Error ? error.message : 'erro desconhecido',
+        },
+        'Não foi possível interpretar o anexo de provas',
+      );
+    }
+  }
+  return results;
 }
 
 export async function collectClassPosts(page: Page): Promise<PortalItem[]> {

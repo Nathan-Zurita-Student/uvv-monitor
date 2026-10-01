@@ -20,6 +20,7 @@ import { verificationWindow, type DailySlot, isWeeklyReviewRun } from './windows
 import { TelegramClient } from '../telegram/client.js';
 import {
   format72HourSummary,
+  formatCompleteTaskSummary,
   formatNovelty,
   formatPriorityTask,
   formatPriorityTaskHeader,
@@ -97,8 +98,12 @@ export async function runMonitor(
 
   const window = verificationWindow(now, slot);
   try {
+    const gmailLookback = new Date(now.getTime() - 30 * 24 * 60 * 60_000);
     candidates.push(
-      ...(await collectRelevantGmail(new GmailGoogleGateway(googleCredentials), window.from)),
+      ...(await collectRelevantGmail(
+        new GmailGoogleGateway(googleCredentials),
+        gmailLookback < window.from ? gmailLookback : window.from,
+      )),
     );
     run.gmailStatus = 'SUCCESS';
   } catch (error) {
@@ -177,6 +182,9 @@ export async function runMonitor(
     }
     const allTasks = allItems.filter(isTrackableTask);
     const visibleTasks = allTasks.slice(0, 3);
+    for (const summary of formatCompleteTaskSummary(allTasks)) {
+      await telegram.sendMessage(summary);
+    }
     if (visibleTasks.length > 0) {
       await telegram.sendMessage(formatPriorityTaskHeader(visibleTasks.length, allTasks.length));
     }
