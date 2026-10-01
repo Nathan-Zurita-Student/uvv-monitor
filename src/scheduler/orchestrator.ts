@@ -175,7 +175,7 @@ export async function runMonitor(
       );
     } else {
       for (const item of changedNow) {
-        if (item.metadata?.contextOnly !== 'true' && !isTrackableTask(item)) {
+        if (item.metadata?.contextOnly !== 'true') {
           await telegram.sendMessage(formatNovelty(item));
         }
       }
