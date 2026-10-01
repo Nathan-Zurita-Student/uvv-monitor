@@ -35,6 +35,11 @@ export interface DeduplicationResult {
 }
 
 function hashCandidate(candidate: DetectedItemCandidate): string {
+  const stableMetadata = candidate.metadata
+    ? Object.fromEntries(
+        Object.entries(candidate.metadata).filter(([key]) => !key.startsWith('ai')),
+      )
+    : undefined;
   return generateContentHash({
     source: candidate.source,
     externalId: candidate.externalId,
@@ -45,7 +50,7 @@ function hashCandidate(candidate: DetectedItemCandidate): string {
     ...(candidate.officialDate ? { officialDate: candidate.officialDate } : {}),
     ...(candidate.officialDeadline ? { officialDeadline: candidate.officialDeadline } : {}),
     ...(candidate.status ? { status: candidate.status } : {}),
-    ...(candidate.metadata ? { metadata: candidate.metadata } : {}),
+    ...(stableMetadata ? { metadata: stableMetadata } : {}),
   });
 }
 
@@ -72,6 +77,9 @@ function materialize(
   previous?: AcademicItem,
 ): AcademicItem {
   const contentHash = hashCandidate(candidate);
+  const previousAiMetadata = Object.fromEntries(
+    Object.entries(previous?.metadata ?? {}).filter(([key]) => key.startsWith('ai')),
+  );
   return {
     id: previous?.id ?? friendlyItemId(candidate.source, candidate.externalId),
     externalId: candidate.externalId,
@@ -94,7 +102,9 @@ function materialize(
     ...(previous?.calendarEventId ? { calendarEventId: previous.calendarEventId } : {}),
     status: previous?.status ?? candidate.status ?? 'TODO',
     urgency: candidate.urgency ?? previous?.urgency ?? 'INFORMATIONAL',
-    ...(candidate.metadata ? { metadata: candidate.metadata } : {}),
+    ...(candidate.metadata || Object.keys(previousAiMetadata).length > 0
+      ? { metadata: { ...candidate.metadata, ...previousAiMetadata } }
+      : {}),
   };
 }
 

@@ -27,6 +27,7 @@
     "sheets:setup": "tsx src/cli/sheets-setup.ts",
     "sheets:test": "tsx src/cli/sheets-test.ts",
     "config:check": "tsx src/cli/config-check.ts",
+    "ai:test": "tsx src/cli/ai-test.ts",
     "start": "tsx src/cli/run.ts"
   },
   "dependencies": {

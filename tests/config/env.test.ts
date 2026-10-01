@@ -7,6 +7,8 @@ describe('configuração de ambiente', () => {
     expect(config.DRY_RUN).toBe(true);
     expect(config.TZ).toBe('America/Sao_Paulo');
     expect(config.TELEGRAM_WEBHOOK_ENABLED).toBe(false);
+    expect(config.AI_ENABLED).toBe(false);
+    expect(config.AI_PROVIDER).toBe('gemini');
   });
 
   it('aceita integrações opcionais vazias do arquivo de exemplo', () => {
@@ -25,6 +27,7 @@ describe('configuração de ambiente', () => {
         googleOAuth: false,
         googleSheet: false,
         moodleCalendar: false,
+        aiEnabled: false,
       }),
     );
   });

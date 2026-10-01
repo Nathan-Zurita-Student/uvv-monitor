@@ -37,6 +37,17 @@ const environmentSchema = z.object({
   GOOGLE_SHEET_ID: optionalSecret,
   GOOGLE_CALENDAR_ID: z.string().trim().min(1).default('primary'),
   MOODLE_CALENDAR_URL: optionalUrl,
+  AI_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  AI_PROVIDER: z.enum(['gemini', 'openai']).default('gemini'),
+  GEMINI_API_KEY: optionalSecret,
+  GEMINI_MODEL: z.string().trim().min(1).default('gemini-3.1-flash-lite'),
+  OPENAI_API_KEY: optionalSecret,
+  OPENAI_MODEL: z.string().trim().min(1).default('gpt-6-luna'),
+  AI_MAX_CALLS_PER_RUN: z.coerce.number().int().min(0).max(100).default(20),
+  AI_MAX_INPUT_CHARS: z.coerce.number().int().min(1_000).max(100_000).default(20_000),
 });
 
 export type AppConfig = z.infer<typeof environmentSchema>;
@@ -127,5 +138,10 @@ export function configPresence(config: AppConfig): Record<string, boolean | stri
     ),
     googleSheet: Boolean(config.GOOGLE_SHEET_ID),
     moodleCalendar: Boolean(config.MOODLE_CALENDAR_URL),
+    aiEnabled: config.AI_ENABLED,
+    aiProvider: config.AI_PROVIDER,
+    aiCredentials: Boolean(
+      config.AI_PROVIDER === 'gemini' ? config.GEMINI_API_KEY : config.OPENAI_API_KEY,
+    ),
   };
 }

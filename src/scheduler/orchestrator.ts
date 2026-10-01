@@ -30,6 +30,7 @@ import { processTelegramUpdates } from '../telegram/processor.js';
 import { buildTaskInlineKeyboard, isTrackableTask } from '../telegram/task-actions.js';
 import { logger } from '../utils/logger.js';
 import { collectMoodleCalendar } from '../moodle/calendar-feed.js';
+import { createAiProvider, enrichItemsWithAi } from '../ai/service.js';
 
 export async function runMonitor(
   config: AppConfig,
@@ -131,10 +132,29 @@ export async function runMonitor(
       return !(enrichmentOnly && previousDescription === item.metadata?.originalTitle);
     })
     .map(({ item }) => item);
-  const changedNow = [...diff.newItems, ...meaningfulChangedItems].flatMap((item) => {
+  const changedNowBeforeAi = [...diff.newItems, ...meaningfulChangedItems].flatMap((item) => {
     const prioritizedItem = prioritizedById.get(item.id);
     return prioritizedItem ? [prioritizedItem] : [];
   });
+  let changedNow = changedNowBeforeAi;
+  try {
+    const ai = await enrichItemsWithAi(prioritized, createAiProvider(config), {
+      maxCalls: config.AI_MAX_CALLS_PER_RUN,
+      maxInputCharacters: config.AI_MAX_INPUT_CHARS,
+    });
+    const enrichedById = new Map(ai.items.map((item) => [item.id, item]));
+    for (const [index, item] of prioritized.entries()) {
+      prioritized[index] = enrichedById.get(item.id) ?? item;
+    }
+    changedNow = changedNowBeforeAi.map((item) => enrichedById.get(item.id) ?? item);
+    if (ai.errors.length > 0) run.errors.push(...ai.errors.map((error) => `IA: ${error}`));
+    logger.info(
+      { module: 'AI', calls: ai.calls, errors: ai.errors.length },
+      'Análises acadêmicas processadas',
+    );
+  } catch (error) {
+    run.errors.push(`IA: ${error instanceof Error ? error.message : 'erro'}`);
+  }
   await repository.upsertDetectedItems(prioritized);
   run.itemsFound = candidates.length;
   const allItems = prioritizeItems(await repository.listDetectedItems(), now);

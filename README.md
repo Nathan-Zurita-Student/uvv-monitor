@@ -169,7 +169,45 @@ GOOGLE_SHEET_ID
 GOOGLE_CALENDAR_ID       # opcional; primary por padrão
 MOODLE_CALENDAR_URL      # URL privada de exportação dinâmica do calendário EAD
 DRY_RUN                  # comece com true
+AI_ENABLED               # false por padrão; true ativa a interpretação por IA
+AI_PROVIDER              # gemini ou openai
+GEMINI_API_KEY           # obrigatório quando AI_PROVIDER=gemini
+GEMINI_MODEL             # padrão: gemini-3.1-flash-lite
+OPENAI_API_KEY           # obrigatório quando AI_PROVIDER=openai
+OPENAI_MODEL             # padrão: gpt-6-luna
+AI_MAX_CALLS_PER_RUN     # limite de segurança; padrão: 20
+AI_MAX_INPUT_CHARS       # máximo de texto por item; padrão: 20000
 ```
+
+## Interpretação opcional por IA
+
+O monitor funciona integralmente sem IA. Quando `AI_ENABLED=true`, itens novos ou alterados são
+transformados em uma explicação simples contendo o que fazer, o que estudar, materiais mencionados
+e informações que ainda precisam de confirmação. A IA nunca substitui datas oficiais, status,
+deduplicação ou as regras do Google Calendar.
+
+Gemini é o provedor padrão por oferecer uma camada gratuita. Crie uma chave no Google AI Studio e
+configure:
+
+```env
+AI_ENABLED=true
+AI_PROVIDER=gemini
+GEMINI_API_KEY=sua_chave
+GEMINI_MODEL=gemini-3.1-flash-lite
+AI_MAX_CALLS_PER_RUN=20
+AI_MAX_INPUT_CHARS=20000
+```
+
+Para testar sem executar o monitor inteiro:
+
+```bash
+npm run ai:test
+```
+
+O resultado da análise é guardado junto ao item na planilha. O mesmo conteúdo não é enviado
+novamente à API; uma nova análise só ocorre quando título, descrição, data ou disciplina mudam. Se
+a API estiver indisponível ou atingir a cota, a execução continua e envia a notificação tradicional.
+Antes da chamada, e-mails, identificadores numéricos longos e possíveis segredos são removidos.
 
 Nenhuma API de IA é necessária.
 

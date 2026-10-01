@@ -140,6 +140,7 @@ export function formatPriorityTask(item: AcademicItem): string {
     disciplineLine(item),
     `📅 ${taskUrgencyLabels[item.urgency]} — ${formatAcademicDate(item.officialDeadline ?? item.officialDate)}`,
     `📊 Situação atual: ${taskStatusLabels[item.status]}`,
+    ...aiExplanationLines(item),
     `🆔 ${item.id}`,
   ].join('\n');
 }
@@ -161,6 +162,50 @@ function sourceLinkLine(item: AcademicItem): string {
   return `🔗 ${label}: ${item.sourceUrl}`;
 }
 
+function parseAiList(value: string | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function aiExplanationLines(item: AcademicItem): string[] {
+  const summary = item.metadata?.aiSummary;
+  if (!summary) return [];
+  const actions = parseAiList(item.metadata?.aiActions);
+  const topics = parseAiList(item.metadata?.aiStudyTopics);
+  const materials = parseAiList(item.metadata?.aiMaterials);
+  const questions = parseAiList(item.metadata?.aiOpenQuestions);
+  const lines = ['', '🤖 EXPLICAÇÃO SIMPLES', cleanText(summary, 900)];
+  if (actions.length > 0)
+    lines.push(
+      '',
+      '✅ O que você precisa fazer',
+      ...actions.map((value) => `• ${cleanText(value, 280)}`),
+    );
+  if (topics.length > 0)
+    lines.push('', '📖 O que estudar', ...topics.map((value) => `• ${cleanText(value, 280)}`));
+  if (materials.length > 0)
+    lines.push(
+      '',
+      '📚 Materiais mencionados',
+      ...materials.map((value) => `• ${cleanText(value, 280)}`),
+    );
+  if (questions.length > 0)
+    lines.push(
+      '',
+      '⚠️ Ainda precisa confirmar',
+      ...questions.map((value) => `• ${cleanText(value, 280)}`),
+    );
+  lines.push('', `🔎 Grau de certeza da análise: ${item.metadata?.aiCertainty ?? 'não informado'}`);
+  return lines;
+}
+
 export function formatNovelty(item: AcademicItem): string {
   const lines = [
     'NOVIDADE UVV',
@@ -170,6 +215,7 @@ export function formatNovelty(item: AcademicItem): string {
     '',
     `O que foi informado: ${cleanText(item.description, 500)}`,
     `📅 Data oficial: ${formatAcademicDate(item.officialDeadline ?? item.officialDate)}`,
+    ...aiExplanationLines(item),
   ];
   if (item.metadata?.weight) lines.push(`📊 Peso/nota: ${item.metadata.weight}`);
   lines.push(
