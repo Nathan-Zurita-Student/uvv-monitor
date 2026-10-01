@@ -1,0 +1,116 @@
+import type { ItemStatus, ItemType } from '../models/academic-item.js';
+import type { DetectedItemCandidate } from '../persistence/deduplication.js';
+import { inferItemType } from '../portal/parsers.js';
+
+const DEFAULT_MOODLE_CALENDAR_URL = 'https://saladeaula.ead.uvv.br/calendar/view.php';
+
+interface IcsEvent {
+  uid: string;
+  summary: string;
+  description: string;
+  url?: string;
+  categories?: string;
+  startsAt: string;
+}
+
+function decodeIcsText(value: string): string {
+  return value
+    .replace(/\\n/gi, '\n')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim();
+}
+
+function parseIcsDate(value: string): string | undefined {
+  if (/^\d{8}$/.test(value)) {
+    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  }
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/.exec(value);
+  if (!match) return undefined;
+  const local = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`;
+  return match[7] ? `${local}Z` : local;
+}
+
+function parseEvent(block: string): IcsEvent | undefined {
+  const properties = new Map<string, string>();
+  for (const line of block.split(/\r?\n/)) {
+    const separator = line.indexOf(':');
+    if (separator < 0) continue;
+    const name = line.slice(0, separator).split(';')[0]?.toUpperCase();
+    if (name && !properties.has(name)) properties.set(name, line.slice(separator + 1));
+  }
+  const uid = properties.get('UID')?.trim();
+  const summary = properties.get('SUMMARY');
+  const startsAt = parseIcsDate(properties.get('DTSTART') ?? '');
+  if (!uid || !summary || !startsAt) return undefined;
+  const url = properties.get('URL')?.trim();
+  return {
+    uid,
+    summary: decodeIcsText(summary),
+    description: decodeIcsText(properties.get('DESCRIPTION') ?? summary),
+    startsAt,
+    ...(url ? { url } : {}),
+    ...(properties.get('CATEGORIES')
+      ? { categories: decodeIcsText(properties.get('CATEGORIES') ?? '') }
+      : {}),
+  };
+}
+
+function statusFor(type: ItemType): ItemStatus {
+  return ['EXAM', 'ASSIGNMENT', 'AOP', 'DOCUMENT'].includes(type) ? 'TODO' : 'WAITING';
+}
+
+function disciplineFor(event: IcsEvent): string | undefined {
+  const descriptionCourse = /(?:curso|course)\s*:\s*([^\r\n|;]+)/i
+    .exec(event.description)?.[1]
+    ?.trim();
+  const value = descriptionCourse || event.categories;
+  return value && !/^(evento|event|curso|course)$/i.test(value) ? value : undefined;
+}
+
+export function parseMoodleCalendar(ics: string): DetectedItemCandidate[] {
+  const unfolded = ics.replace(/\r?\n[ \t]/g, '');
+  return [...unfolded.matchAll(/BEGIN:VEVENT\r?\n([\s\S]*?)\r?\nEND:VEVENT/g)].flatMap((match) => {
+    const event = parseEvent(match[1] ?? '');
+    if (!event) return [];
+    const type = inferItemType(`${event.summary} ${event.description}`);
+    const trackable = ['EXAM', 'ASSIGNMENT', 'AOP', 'DOCUMENT'].includes(type);
+    const discipline = disciplineFor(event);
+    return [
+      {
+        externalId: `ead-calendar:${event.uid}`,
+        source: 'PORTAL' as const,
+        sourceUrl: event.url ?? DEFAULT_MOODLE_CALENDAR_URL,
+        ...(discipline ? { discipline } : {}),
+        title: event.summary,
+        description: event.description,
+        type,
+        ...(trackable ? { officialDeadline: event.startsAt } : { officialDate: event.startsAt }),
+        status: statusFor(type),
+        metadata: { origin: 'EAD_CALENDAR', moodleCalendarUid: event.uid },
+      },
+    ];
+  });
+}
+
+export async function collectMoodleCalendar(
+  calendarUrl: string,
+  fetcher: typeof fetch = fetch,
+): Promise<DetectedItemCandidate[]> {
+  const url = new URL(calendarUrl);
+  if (url.protocol !== 'https:' || url.hostname !== 'saladeaula.ead.uvv.br') {
+    throw new Error('MOODLE_CALENDAR_URL deve apontar para o domínio oficial do Ambiente Virtual.');
+  }
+  const response = await fetcher(url, { signal: AbortSignal.timeout(30_000) });
+  if (!response.ok)
+    throw new Error(`Calendário EAD respondeu com HTTP ${String(response.status)}.`);
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('text/calendar')) {
+    throw new Error('O Ambiente Virtual não retornou um calendário iCalendar válido.');
+  }
+  return parseMoodleCalendar(await response.text());
+}

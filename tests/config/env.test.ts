@@ -17,9 +17,15 @@ describe('configuração de ambiente', () => {
       GOOGLE_CLIENT_SECRET: '',
       GOOGLE_REFRESH_TOKEN: '',
       GOOGLE_SHEET_ID: '',
+      MOODLE_CALENDAR_URL: '',
     });
     expect(configPresence(config)).toEqual(
-      expect.objectContaining({ telegram: false, googleOAuth: false, googleSheet: false }),
+      expect.objectContaining({
+        telegram: false,
+        googleOAuth: false,
+        googleSheet: false,
+        moodleCalendar: false,
+      }),
     );
   });
 

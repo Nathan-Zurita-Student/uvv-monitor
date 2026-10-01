@@ -28,6 +28,7 @@ import {
 import { processTelegramUpdates } from '../telegram/processor.js';
 import { buildTaskInlineKeyboard, isTrackableTask } from '../telegram/task-actions.js';
 import { logger } from '../utils/logger.js';
+import { collectMoodleCalendar } from '../moodle/calendar-feed.js';
 
 export async function runMonitor(
   config: AppConfig,
@@ -79,6 +80,19 @@ export async function runMonitor(
     run.errors.push(`Portal: ${error instanceof Error ? error.message : 'erro'}`);
   } finally {
     await portalSession.close();
+  }
+
+  if (config.MOODLE_CALENDAR_URL) {
+    try {
+      const moodleCalendarItems = await collectMoodleCalendar(config.MOODLE_CALENDAR_URL);
+      candidates.push(...moodleCalendarItems);
+      logger.info(
+        { module: 'Moodle', items: moodleCalendarItems.length },
+        'Calendário EAD coletado',
+      );
+    } catch (error) {
+      run.errors.push(`Calendário EAD: ${error instanceof Error ? error.message : 'erro'}`);
+    }
   }
 
   const window = verificationWindow(now, slot);

@@ -5,8 +5,8 @@ export function portalItemToCandidate(item: PortalItem): DetectedItemCandidate {
   const deadline = item.origin === 'CALENDAR' && item.metadata.portalEventType === '1';
   const portalStatus = (item.status ?? '').toLowerCase();
   const status =
-    item.origin === 'SERVICE'
-      ? /conclu[ií]do/.test(portalStatus)
+    item.origin === 'SERVICE' || item.origin === 'EAD'
+      ? /conclu[ií]do|marcar como n[aã]o feito/.test(portalStatus)
         ? 'DONE'
         : /cancelado/.test(portalStatus)
           ? 'IGNORED'

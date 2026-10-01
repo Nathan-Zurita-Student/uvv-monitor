@@ -34,6 +34,7 @@ jobs:
       GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
       GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID || 'primary' }}
+      MOODLE_CALENDAR_URL: ${{ secrets.MOODLE_CALENDAR_URL }}
       DRY_RUN: ${{ secrets.DRY_RUN || 'true' }}
 
     steps:

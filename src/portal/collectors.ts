@@ -1,8 +1,8 @@
 import type { Page, Response } from 'playwright';
+import { parseMoodleActivity, type MoodleActivityInput } from '../moodle/activity-parser.js';
 import { PORTAL_URLS } from './constants.js';
 import type { ClassCardInput, ClassPostPageInput, MessageLinkInput, PortalItem } from './models.js';
 import {
-  inferItemType,
   parseCalendarResponse,
   parseClassCards,
   parseClassPostPage,
@@ -111,41 +111,20 @@ export async function collectClassPosts(page: Page): Promise<PortalItem[]> {
 
 export async function collectEadActivities(page: Page): Promise<PortalItem[]> {
   await navigate(page, PORTAL_URLS.classes);
-  const courses = await page.locator('.card-turma').evaluateAll((cards) =>
-    cards.flatMap((card) => {
-      const link = card.querySelector<HTMLAnchorElement>(
-        'a[data-content][data-url*="saladeaula.ead.uvv.br"]',
-      );
-      const identifier = link?.getAttribute('data-content');
-      if (!identifier) return [];
-      return [{ discipline: card.textContent ?? 'Disciplina EAD', identifier }];
-    }),
+  const accessLinks = page.locator(
+    '.card-turma a[data-content][data-url*="saladeaula.ead.uvv.br"]',
   );
-  if (courses.length === 0) return [];
+  const courseCount = await accessLinks.count();
+  if (courseCount === 0) return [];
 
-  const resolved: string[] = [];
-  const failures: number[] = [];
-  for (const course of courses) {
-    const result = await page.evaluate(async (identifier) => {
-      const response = await fetch(`/Aluno/Link/?id=${identifier}`);
-      const contentType = response.headers.get('content-type') ?? '';
-      if (!response.ok || !contentType.includes('application/json')) {
-        return { status: response.status };
-      }
-      const payload = (await response.json()) as { UrlAula?: string };
-      return { status: response.status, url: payload.UrlAula };
-    }, course.identifier);
-    if (result.url) resolved.push(result.url);
-    else failures.push(result.status);
-  }
-  if (resolved.length === 0) {
-    const status = failures[0] ?? 0;
-    throw new Error(
-      `SSO do Ambiente Virtual falhou para ${String(courses.length)} curso(s)${status ? ` (HTTP ${String(status)})` : ''}.`,
-    );
-  }
-
-  await navigate(page, resolved[0]!);
+  // O botão oficial não usa /Aluno/Link. A interface atual chama
+  // /AcessoMoodle/GetToken e conclui o SSO de forma assíncrona. Clicar no
+  // controle real preserva esse contrato sem armazenar cookies ou tokens.
+  await accessLinks.first().click();
+  await page.waitForURL((url) => url.hostname === 'saladeaula.ead.uvv.br', {
+    timeout: 60_000,
+    waitUntil: 'domcontentloaded',
+  });
   await navigate(page, PORTAL_URLS.eadCourses);
   if (
     new URL(page.url()).hostname !== 'saladeaula.ead.uvv.br' ||
@@ -154,47 +133,68 @@ export async function collectEadActivities(page: Page): Promise<PortalItem[]> {
     throw new Error('SSO abriu, mas o Ambiente Virtual não confirmou uma sessão autenticada.');
   }
 
-  const courseLinks = await page.locator('a[href*="/course/view.php?id="]').evaluateAll((links) =>
-    links.map((link) => ({
-      title: (link.textContent ?? '').replace(/\s+/g, ' ').trim(),
-      url: (link as HTMLAnchorElement).href,
-    })),
-  );
-  const uniqueCourses = new Map(
-    courseLinks.filter((course) => course.title).map((course) => [course.url, course]),
+  const courseUrls = await page
+    .locator('a[href*="/course/view.php?id="]')
+    .evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).href));
+  const uniqueCourses = new Set(
+    courseUrls.map(
+      (url) =>
+        new URL(url).origin +
+        new URL(url).pathname +
+        `?id=${new URL(url).searchParams.get('id') ?? ''}`,
+    ),
   );
   const items: PortalItem[] = [];
-  for (const course of uniqueCourses.values()) {
-    await navigate(page, course.url);
-    const activities: Array<{ title: string; url: string; description: string }> = await page
-      .locator('a[href*="/mod/"][href*="view.php?id="]')
-      .evaluateAll((links) =>
-        links.map((link) => ({
-          title: (link.textContent ?? '').replace(/\s+/g, ' ').trim(),
-          url: (link as HTMLAnchorElement).href,
-          description:
-            link.closest('[data-for="cmitem"],.activity-item,.activity')?.textContent ??
-            link.textContent ??
-            '',
-        })),
-      );
-    for (const activity of activities) {
-      if (!activity.title) continue;
-      const url = new URL(activity.url);
-      const activityId = url.searchParams.get('id');
-      if (!activityId) continue;
-      const title = activity.title.replace(/\s+/g, ' ').trim();
-      items.push({
-        externalId: `ead:${url.pathname}:${activityId}`,
-        origin: 'EAD',
-        sourceUrl: activity.url,
-        discipline: course.title,
-        title,
-        description: activity.description.replace(/\s+/g, ' ').trim(),
-        type: inferItemType(`${title} ${activity.description}`),
-        links: [activity.url],
-        metadata: { moodleCourseUrl: course.url },
-      });
+  const seenActivities = new Set<string>();
+  for (const courseUrl of uniqueCourses) {
+    await navigate(page, courseUrl);
+    const courseTitle =
+      (await page.locator('h1').first().textContent())?.replace(/\s+/g, ' ').trim() ??
+      'Disciplina EAD';
+    const sectionUrls = await page
+      .locator('a[href*="/course/view.php?id="][href*="section="]')
+      .evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).href));
+    const targets = new Set(sectionUrls.length > 0 ? sectionUrls : [courseUrl]);
+    for (const target of targets) {
+      await navigate(page, target);
+      const activities: MoodleActivityInput[] = await page
+        .locator('[role="main"] li.activity')
+        .evaluateAll(
+          (elements, title) =>
+            elements.flatMap((element) => {
+              const link = element.querySelector<HTMLAnchorElement>(
+                'a[href*="/mod/"][href*="view.php?id="]',
+              );
+              if (!link) return [];
+              const instance = link.querySelector('.instancename');
+              const activityTitle = instance?.childNodes[0]?.textContent ?? link.textContent ?? '';
+              const completion =
+                element.querySelector<HTMLElement>('[data-region="completion-info"] button')
+                  ?.innerText ??
+                element
+                  .querySelector<HTMLElement>('[data-region="completion-info"] [aria-label]')
+                  ?.getAttribute('aria-label') ??
+                element.querySelector<HTMLElement>('button')?.innerText ??
+                '';
+              return [
+                {
+                  courseTitle: title,
+                  title: activityTitle,
+                  url: link.href,
+                  text: (element as HTMLElement).innerText,
+                  completion,
+                },
+              ];
+            }),
+          courseTitle,
+        );
+      for (const input of activities) {
+        const item = parseMoodleActivity(input);
+        if (!item || seenActivities.has(item.externalId)) continue;
+        seenActivities.add(item.externalId);
+        item.metadata.moodleCourseUrl = courseUrl;
+        items.push(item);
+      }
     }
   }
   return items;

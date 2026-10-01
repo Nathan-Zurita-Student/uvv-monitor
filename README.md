@@ -7,8 +7,8 @@ depende de API paga de IA.
 ## Estado do projeto
 
 - Login UVV validado contra o Portal real em 30/09/2026.
-- Coleta read-only de Mensagens, blogs e posts de Minhas Turmas, Atendimento, Calendário de
-  Atividades e Quadro de Horários.
+- Coleta read-only de Mensagens, blogs e posts de Minhas Turmas, atividades do Ambiente Virtual,
+  Atendimento, Calendário de Atividades e Quadro de Horários.
 - Gmail read-only, Google Calendar, Google Sheets e Telegram implementados; a validação externa
   depende da configuração OAuth/Bot do usuário.
 - Hash, deduplicação entre posts/calendário, mudanças de prazo, prioridade, tarefas interativas,
@@ -17,9 +17,10 @@ depende de API paga de IA.
 - GitHub Actions configurado para 12h, 17h e 21h em `America/Sao_Paulo`.
 - `DRY_RUN=true` é o padrão.
 
-Limitação conhecida: o acesso ao Ambiente Virtual depende do endpoint SSO da própria UVV. Quando
-esse endpoint falha, o bot informa explicitamente que o AVA não foi verificado e continua as demais
-fontes.
+O Ambiente Virtual é acessado pelo mesmo botão SSO usado pela interface do Portal. Uma URL privada
+opcional do calendário EAD complementa a coleta quando os professores publicam prazos no calendário
+do Moodle. Quando o SSO falha, o bot informa explicitamente que o AVA não foi verificado e continua
+as demais fontes.
 
 ## Arquitetura
 
@@ -166,6 +167,7 @@ GOOGLE_CLIENT_SECRET
 GOOGLE_REFRESH_TOKEN
 GOOGLE_SHEET_ID
 GOOGLE_CALENDAR_ID       # opcional; primary por padrão
+MOODLE_CALENDAR_URL      # URL privada de exportação dinâmica do calendário EAD
 DRY_RUN                  # comece com true
 ```
 

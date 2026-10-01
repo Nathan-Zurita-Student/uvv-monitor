@@ -6,6 +6,11 @@ const optionalSecret = z.preprocess(
   z.string().trim().min(1).optional(),
 );
 
+const optionalUrl = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().url().optional(),
+);
+
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   TZ: z.literal('America/Sao_Paulo').default('America/Sao_Paulo'),
@@ -31,6 +36,7 @@ const environmentSchema = z.object({
   GOOGLE_REFRESH_TOKEN: optionalSecret,
   GOOGLE_SHEET_ID: optionalSecret,
   GOOGLE_CALENDAR_ID: z.string().trim().min(1).default('primary'),
+  MOODLE_CALENDAR_URL: optionalUrl,
 });
 
 export type AppConfig = z.infer<typeof environmentSchema>;
@@ -120,5 +126,6 @@ export function configPresence(config: AppConfig): Record<string, boolean | stri
       config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET && config.GOOGLE_REFRESH_TOKEN,
     ),
     googleSheet: Boolean(config.GOOGLE_SHEET_ID),
+    moodleCalendar: Boolean(config.MOODLE_CALENDAR_URL),
   };
 }
