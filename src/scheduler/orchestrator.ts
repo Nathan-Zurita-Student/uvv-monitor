@@ -162,9 +162,17 @@ export async function runMonitor(
       await telegram.sendMessage(formatPriorityTaskHeader(visibleTasks.length, allTasks.length));
     }
     for (const item of visibleTasks) {
+      const actionToken = randomUUID();
       const message = await telegram.sendMessage(
         formatPriorityTask(item),
-        config.TELEGRAM_WEBHOOK_ENABLED ? { inlineKeyboard: buildTaskInlineKeyboard(item) } : {},
+        config.TELEGRAM_ACTIONS_WEB_APP_URL
+          ? {
+              inlineKeyboard: buildTaskInlineKeyboard(item, {
+                actionBaseUrl: config.TELEGRAM_ACTIONS_WEB_APP_URL,
+                actionToken,
+              }),
+            }
+          : {},
       );
       await repository.upsertTelegramTaskMessage({
         itemId: item.id,
@@ -172,6 +180,7 @@ export async function runMonitor(
         messageId: message.message_id,
         lastRenderedStatus: item.status,
         updatedAt: now.toISOString(),
+        actionToken,
       });
     }
     if (slot === '21:00') {

@@ -25,6 +25,7 @@ const environmentSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  TELEGRAM_ACTIONS_WEB_APP_URL: z.string().url().optional(),
   GOOGLE_CLIENT_ID: optionalSecret,
   GOOGLE_CLIENT_SECRET: optionalSecret,
   GOOGLE_REFRESH_TOKEN: optionalSecret,
@@ -114,6 +115,7 @@ export function configPresence(config: AppConfig): Record<string, boolean | stri
     uvvCredentials: Boolean(config.UVV_USERNAME && config.UVV_PASSWORD),
     telegram: Boolean(config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID),
     telegramWebhook: config.TELEGRAM_WEBHOOK_ENABLED,
+    telegramActionsWebApp: Boolean(config.TELEGRAM_ACTIONS_WEB_APP_URL),
     googleOAuth: Boolean(
       config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET && config.GOOGLE_REFRESH_TOKEN,
     ),

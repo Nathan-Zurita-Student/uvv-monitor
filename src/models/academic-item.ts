@@ -72,4 +72,5 @@ export interface TelegramTaskMessage {
   messageId: number;
   lastRenderedStatus: ItemStatus;
   updatedAt: string;
+  actionToken?: string;
 }

@@ -111,18 +111,18 @@ Comandos:
 Respostas como “já fiz”, “estou fazendo” e “ainda não fiz” também funcionam quando incluem o ID ou
 são respostas a uma mensagem que contém o ID.
 
-### Botões inline em tempo real
+### Botões de andamento em tempo real
 
-Por padrão, `TELEGRAM_WEBHOOK_ENABLED=false` mantém o modo `getUpdates`, processado apenas durante
-as execuções agendadas. Para receber cliques imediatamente e editar a própria mensagem da tarefa,
-publique o Web App descrito em [`apps-script/README.md`](apps-script/README.md).
+Mantenha `TELEGRAM_WEBHOOK_ENABLED=false` para que comandos escritos sejam lidos por `getUpdates`
+nas execuções agendadas. Para atualizar uma tarefa imediatamente por botão, publique o Web App
+descrito em [`apps-script/README.md`](apps-script/README.md) e configure sua URL em
+`TELEGRAM_ACTIONS_WEB_APP_URL`.
 
-Com o webhook ativo, cada uma das três prioridades principais recebe uma mensagem própria com
+Cada uma das três prioridades principais recebe uma mensagem própria com
 botões de “Não comecei”, “Em andamento”, “Concluído”, “Aguardando” e um link para a fonte original.
-O callback carrega o ID persistente da tarefa, nunca sua posição na lista. A aba
-`telegram_task_messages` guarda a última mensagem enviada para auditoria e continuidade.
-Enquanto o webhook estiver desativado, as tarefas continuam sendo enviadas individualmente, mas
-sem botões inline, evitando controles que ficariam carregando até a próxima execução.
+Cada link usa um token aleatório exclusivo, salvo na aba `telegram_task_messages`. Ao tocar, o Web
+App valida o token, atualiza a planilha e edita a mensagem do Telegram. Esse fluxo evita o
+redirecionamento HTTP do Apps Script que impede seu uso confiável como webhook do Telegram.
 
 ## Google Cloud e OAuth
 
@@ -159,7 +159,8 @@ UVV_USERNAME
 UVV_PASSWORD
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
-TELEGRAM_WEBHOOK_ENABLED # false até publicar o Apps Script; depois true
+TELEGRAM_WEBHOOK_ENABLED # mantenha false no modo getUpdates
+TELEGRAM_ACTIONS_WEB_APP_URL # URL pública /exec do Apps Script
 GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
 GOOGLE_REFRESH_TOKEN
@@ -244,9 +245,9 @@ Schedules podem atrasar alguns minutos. `RUN_SLOT` preserva a janela acadêmica 
 
 ### Botão inline fica carregando
 
-O webhook ainda não foi publicado/registrado ou `TELEGRAM_WEBHOOK_ENABLED` foi ativado cedo demais.
-Siga `apps-script/README.md`. Para voltar ao polling, execute `deleteWebhook` no Apps Script e
-defina a variável como `false`.
+Confirme que `TELEGRAM_ACTIONS_WEB_APP_URL` aponta para a URL pública terminada em `/exec`, publique
+uma nova versão do Apps Script e execute novamente o monitor. Os botões de andamento devem ser
+links URL, não callbacks dependentes de webhook.
 
 ### Uma fonte falhou
 

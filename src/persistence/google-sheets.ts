@@ -46,7 +46,14 @@ const tables = {
     'errors',
   ],
   telegram_state: ['lastUpdateId'],
-  telegram_task_messages: ['itemId', 'chatId', 'messageId', 'lastRenderedStatus', 'updatedAt'],
+  telegram_task_messages: [
+    'itemId',
+    'chatId',
+    'messageId',
+    'lastRenderedStatus',
+    'updatedAt',
+    'actionToken',
+  ],
 } as const;
 
 type TableName = keyof typeof tables;
@@ -225,6 +232,7 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
         messageId: Number(row[2] ?? 0),
         lastRenderedStatus: (row[3] ?? 'TODO') as ItemStatus,
         updatedAt: row[4] ?? '',
+        ...(row[5] ? { actionToken: row[5] } : {}),
       }));
   }
 
@@ -236,6 +244,7 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
         String(message.messageId),
         message.lastRenderedStatus,
         message.updatedAt,
+        message.actionToken ?? '',
       ],
     ]);
   }

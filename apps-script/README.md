@@ -1,6 +1,6 @@
-# Webhook gratuito do Telegram
+# Ações gratuitas do Telegram
 
-Este pequeno Google Apps Script recebe os cliques dos botões do Telegram imediatamente. O monitor principal continua no GitHub Actions; o Web App trata apenas interações.
+Este Google Apps Script recebe os cliques dos botões como links seguros. O monitor principal continua no GitHub Actions; o Web App trata somente a atualização de andamento.
 
 ## Publicação
 
@@ -15,9 +15,10 @@ Este pequeno Google Apps Script recebe os cliques dos botões do Telegram imedia
    - executar como você;
    - acesso: qualquer pessoa.
 5. Autorize somente Sheets e conexões externas.
-6. No editor, execute manualmente a função `setupWebhook` uma vez.
-7. No `.env` local e nos GitHub Secrets, defina `TELEGRAM_WEBHOOK_ENABLED=true`.
+6. No `.env` local e nos GitHub Secrets, mantenha `TELEGRAM_WEBHOOK_ENABLED=false`.
+7. Defina `TELEGRAM_ACTIONS_WEB_APP_URL` com a URL pública terminada em `/exec`.
+8. Execute o monitor para gerar novas mensagens com tokens de ação.
 
-Para voltar ao polling, execute `deleteWebhook` no Apps Script e altere `TELEGRAM_WEBHOOK_ENABLED=false`.
+As funções `setupWebhook` e `deleteWebhook` permanecem apenas para compatibilidade. O fluxo recomendado não registra webhook, pois o Content Service do Apps Script responde por redirecionamento.
 
 Nunca coloque os valores das propriedades no repositório.

@@ -65,27 +65,43 @@ function buttonText(label: string, status: ItemStatus, selected: ItemStatus): st
   return status === selected ? `${label} ✓` : label;
 }
 
-export function buildTaskInlineKeyboard(item: AcademicItem): TelegramButton[][] {
+export interface TaskKeyboardOptions {
+  actionBaseUrl?: string;
+  actionToken?: string;
+}
+
+function taskActionUrl(
+  baseUrl: string,
+  itemId: string,
+  status: TaskCallbackStatus,
+  token: string,
+): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set('item', itemId);
+  url.searchParams.set('status', status);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
+
+export function buildTaskInlineKeyboard(
+  item: AcademicItem,
+  options: TaskKeyboardOptions = {},
+): TelegramButton[][] {
+  const actionButton = (text: string, status: TaskCallbackStatus): TelegramButton =>
+    options.actionBaseUrl && options.actionToken
+      ? {
+          text,
+          url: taskActionUrl(options.actionBaseUrl, item.id, status, options.actionToken),
+        }
+      : { text, callback_data: taskCallbackData(item.id, status) };
   const buttons: TelegramButton[][] = [
     [
-      {
-        text: buttonText('⏳ Não comecei', 'TODO', item.status),
-        callback_data: taskCallbackData(item.id, 'not_started'),
-      },
-      {
-        text: buttonText('🔄 Em andamento', 'IN_PROGRESS', item.status),
-        callback_data: taskCallbackData(item.id, 'in_progress'),
-      },
+      actionButton(buttonText('⏳ Não comecei', 'TODO', item.status), 'not_started'),
+      actionButton(buttonText('🔄 Em andamento', 'IN_PROGRESS', item.status), 'in_progress'),
     ],
     [
-      {
-        text: buttonText('✅ Concluído', 'DONE', item.status),
-        callback_data: taskCallbackData(item.id, 'completed'),
-      },
-      {
-        text: buttonText('⏸️ Aguardando', 'WAITING', item.status),
-        callback_data: taskCallbackData(item.id, 'waiting'),
-      },
+      actionButton(buttonText('✅ Concluído', 'DONE', item.status), 'completed'),
+      actionButton(buttonText('⏸️ Aguardando', 'WAITING', item.status), 'waiting'),
     ],
   ];
   if (/^https:\/\//i.test(item.sourceUrl)) {

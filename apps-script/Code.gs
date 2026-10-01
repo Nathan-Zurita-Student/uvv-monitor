@@ -21,8 +21,110 @@ const STATUS_LABELS = Object.freeze({
   IGNORED: '🙈 Ignorado',
 });
 
-function doGet() {
-  return ContentService.createTextOutput('UVV Monitor: webhook ativo.');
+function doGet(event) {
+  if (!event || !event.parameter || !event.parameter.item) {
+    return ContentService.createTextOutput('UVV Monitor: ações do Telegram ativas.');
+  }
+  try {
+    return handleTaskActionPage_(event);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    return actionResultPage_(
+      'Não consegui atualizar',
+      'O link pode ter expirado. Volte ao Telegram e use os botões da mensagem mais recente.',
+      false,
+    );
+  }
+}
+
+function handleTaskActionPage_(event) {
+  const properties = getRequiredProperties_();
+  const itemId = String(event.parameter.item || '').toUpperCase();
+  const callbackStatus = String(event.parameter.status || '').toLowerCase();
+  const token = String(event.parameter.token || '');
+  const status = TASK_STATUS_BY_CALLBACK[callbackStatus];
+  if (!/^UVV-[A-Z0-9]{4,10}$/.test(itemId) || !status || token.length < 20) {
+    return actionResultPage_('Link inválido', 'Use os botões da mensagem mais recente.', false);
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(properties.sheetId);
+    const taskMessage = findRecord_(
+      spreadsheet,
+      'telegram_task_messages',
+      'itemId',
+      itemId,
+    );
+    if (!taskMessage || String(taskMessage.data.actionToken || '') !== token) {
+      return actionResultPage_(
+        'Este botão expirou',
+        'Volte ao Telegram e use a mensagem de prioridades mais recente.',
+        false,
+      );
+    }
+    const item = findRecord_(spreadsheet, 'detected_items', 'id', itemId);
+    if (!item) return actionResultPage_('Tarefa não encontrada', `Não encontrei ${itemId}.`, false);
+
+    updateRecordField_(item, 'status', status);
+    const now = new Date().toISOString();
+    upsertRecord_(spreadsheet, 'user_task_status', 'itemId', {
+      itemId,
+      status,
+      updatedAt: now,
+      source: 'TELEGRAM',
+    });
+    upsertRecord_(spreadsheet, 'telegram_task_messages', 'itemId', {
+      itemId,
+      chatId: taskMessage.data.chatId,
+      messageId: taskMessage.data.messageId,
+      lastRenderedStatus: status,
+      updatedAt: now,
+      actionToken: token,
+    });
+
+    const actionBaseUrl = ScriptApp.getService().getUrl();
+    telegramCall_(properties.botToken, 'editMessageText', {
+      chat_id: String(taskMessage.data.chatId),
+      message_id: Number(taskMessage.data.messageId),
+      text: buildTaskText_(item.data, status),
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: buildTaskActionKeyboard_(
+          actionBaseUrl,
+          itemId,
+          token,
+          status,
+          item.data.sourceUrl,
+          item.data.source,
+        ),
+      },
+    });
+    return actionResultPage_(
+      'Andamento atualizado',
+      `${item.data.title} agora está como ${STATUS_LABELS[status]}. Você já pode fechar esta página.`,
+      true,
+    );
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function actionResultPage_(title, message, success) {
+  const color = success ? '#137333' : '#b3261e';
+  return HtmlService.createHtmlOutput(
+    `<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml_(title)}</title></head><body style="font-family:Arial,sans-serif;background:#f6f8fc;margin:0;padding:32px"><main style="max-width:560px;margin:40px auto;background:white;padding:28px;border-radius:18px;box-shadow:0 4px 24px #0002"><h1 style="color:${color};font-size:24px">${escapeHtml_(title)}</h1><p style="font-size:17px;line-height:1.5">${escapeHtml_(message)}</p><p style="color:#5f6368">UVV Monitor</p></main></body></html>`,
+  ).setTitle(title);
+}
+
+function escapeHtml_(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function doPost(event) {
@@ -246,6 +348,40 @@ function buildTaskKeyboard_(itemId, selectedStatus, sourceUrl, source) {
     ]);
   }
   return keyboard;
+}
+
+function buildTaskActionKeyboard_(baseUrl, itemId, token, selectedStatus, sourceUrl, source) {
+  function statusButton(text, status) {
+    const url = `${baseUrl}?item=${encodeURIComponent(itemId)}&status=${encodeURIComponent(
+      CALLBACK_BY_TASK_STATUS[status],
+    )}&token=${encodeURIComponent(token)}`;
+    return { text: status === selectedStatus ? `${text} ✓` : text, url };
+  }
+  const keyboard = [
+    [statusButton('⏳ Não comecei', 'TODO'), statusButton('🔄 Em andamento', 'IN_PROGRESS')],
+    [statusButton('✅ Concluído', 'DONE'), statusButton('⏸️ Aguardando', 'WAITING')],
+  ];
+  if (/^https:\/\//i.test(String(sourceUrl || ''))) {
+    keyboard.push([
+      {
+        text: source === 'PORTAL' ? '🔗 Abrir no Portal UVV' : '🔗 Abrir informação',
+        url: sourceUrl,
+      },
+    ]);
+  }
+  return keyboard;
+}
+
+function buildTaskText_(item, status) {
+  const lines = [`📌 ${item.title}`];
+  if (item.discipline) lines.push(`🎓 ${item.discipline}`);
+  const deadline = item.officialDeadline || item.officialDate;
+  lines.push(deadline ? `📅 Prazo/data oficial: ${deadline}` : '📅 Prazo/data oficial: não informado');
+  if (item.urgency) lines.push(`⚠️ Prioridade: ${item.urgency}`);
+  lines.push(`📊 Situação atual: ${STATUS_LABELS[status] || status}`);
+  if (/^https:\/\//i.test(String(item.sourceUrl || ''))) lines.push(`🔗 Link: ${item.sourceUrl}`);
+  lines.push(`🆔 Código: ${item.id}`);
+  return lines.join('\n');
 }
 
 function findRecord_(spreadsheet, sheetName, keyName, keyValue) {
