@@ -51,12 +51,7 @@ function handleTaskActionPage_(event) {
   lock.waitLock(5000);
   try {
     const spreadsheet = SpreadsheetApp.openById(properties.sheetId);
-    const taskMessage = findRecord_(
-      spreadsheet,
-      'telegram_task_messages',
-      'itemId',
-      itemId,
-    );
+    const taskMessage = findRecord_(spreadsheet, 'telegram_task_messages', 'itemId', itemId);
     if (!taskMessage || String(taskMessage.data.actionToken || '') !== token) {
       return actionResultPage_(
         'Este botão expirou',
@@ -381,7 +376,9 @@ function buildTaskText_(item, status) {
   const lines = [`📌 ${item.title}`];
   if (item.discipline) lines.push(`🎓 ${item.discipline}`);
   const deadline = item.officialDeadline || item.officialDate;
-  lines.push(deadline ? `📅 Prazo/data oficial: ${deadline}` : '📅 Prazo/data oficial: não informado');
+  lines.push(
+    deadline ? `📅 Prazo/data oficial: ${deadline}` : '📅 Prazo/data oficial: não informado',
+  );
   if (item.urgency) lines.push(`⚠️ Prioridade: ${item.urgency}`);
   lines.push(`📊 Situação atual: ${STATUS_LABELS[status] || status}`);
   if (/^https:\/\//i.test(String(item.sourceUrl || ''))) lines.push(`🔗 Link: ${item.sourceUrl}`);

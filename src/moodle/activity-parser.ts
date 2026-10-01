@@ -61,7 +61,9 @@ export function parseMoodleActivity(input: MoodleActivityInput): PortalItem | un
   const nonGradedExercise =
     /exerc[ií]cio de fixa[cç][aã]o/i.test(title) || /n[aã]o [ée] pontuad[oa]/i.test(description);
   const contextOnly =
-    type === 'NOTICE' || /conclu[ií]do|marcar como n[aã]o feito/i.test(completion) || nonGradedExercise;
+    type === 'NOTICE' ||
+    /conclu[ií]do|marcar como n[aã]o feito/i.test(completion) ||
+    nonGradedExercise;
   return {
     externalId: `ead:${url.pathname}:${activityId}`,
     origin: 'EAD',
