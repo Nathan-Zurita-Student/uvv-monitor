@@ -8,7 +8,8 @@ export const academicAnalysisSchema = z.object({
   studyTopics: z.array(z.string().trim().min(1).max(300)).max(12).default([]),
   materials: z.array(z.string().trim().min(1).max(300)).max(12).default([]),
   openQuestions: z.array(z.string().trim().min(1).max(300)).max(8).default([]),
-  suggestedType: z.enum(itemTypes).optional(),
+  // Sugestão opcional: um valor fora da lista não deve descartar a análise inteira.
+  suggestedType: z.enum(itemTypes).optional().catch(undefined),
   certainty: z.enum(certaintyLevels),
 });
 

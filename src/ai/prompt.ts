@@ -1,4 +1,5 @@
-import type { AcademicAnalysisRequest } from './types.js';
+import { itemTypes } from '../models/academic-item.js';
+import { certaintyLevels, type AcademicAnalysisRequest } from './types.js';
 
 const sensitivePatterns: Array<[RegExp, string]> = [
   [/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '[EMAIL_REMOVIDO]'],
@@ -26,6 +27,8 @@ Regras obrigatórias:
 - studyTopics deve conter apenas conteúdos de estudo explicitamente mencionados.
 - materials deve listar somente arquivos, links ou materiais explicitamente mencionados.
 - openQuestions deve apontar informações importantes ausentes ou ambíguas.
+- suggestedType deve ser exatamente um destes valores: ${itemTypes.join(', ')}. Se nenhum servir, omita o campo.
+- certainty deve ser exatamente um destes valores: ${certaintyLevels.join(', ')}.
 - Responda exclusivamente JSON válido, sem markdown.
 
 Formato:

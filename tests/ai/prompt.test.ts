@@ -32,4 +32,10 @@ describe('prompt acadêmico', () => {
     expect(prompt).toContain('Estudar unidades 1 a 4');
     expect(prompt).not.toContain('aluno@example.com');
   });
+
+  it('informa os valores aceitos para tipo e certeza', () => {
+    const prompt = buildAcademicPrompt({ item, maxInputCharacters: 20_000 });
+    expect(prompt).toContain('suggestedType deve ser exatamente um destes valores: MESSAGE,');
+    expect(prompt).toContain('CONFIRMED, INFERRED, NOT_INFORMED');
+  });
 });
