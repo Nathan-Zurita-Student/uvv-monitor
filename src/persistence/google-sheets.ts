@@ -151,16 +151,16 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
         },
       });
     }
-    await Promise.all(
-      (Object.keys(tables) as TableName[]).map((name) =>
-        this.sheets.spreadsheets.values.update({
-          spreadsheetId: this.spreadsheetId,
+    await this.sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: this.spreadsheetId,
+      requestBody: {
+        valueInputOption: 'RAW',
+        data: (Object.keys(tables) as TableName[]).map((name) => ({
           range: `'${name}'!A1`,
-          valueInputOption: 'RAW',
-          requestBody: { values: [Array.from(tables[name])] },
-        }),
-      ),
-    );
+          values: [Array.from(tables[name])],
+        })),
+      },
+    });
   }
 
   private async rows(name: TableName): Promise<string[][]> {
@@ -177,16 +177,18 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
     const updates = rows.filter((row) => index.has(row[0]));
     const inserts = rows.filter((row) => !index.has(row[0]));
 
-    await Promise.all(
-      updates.map((row) =>
-        this.sheets.spreadsheets.values.update({
-          spreadsheetId: this.spreadsheetId,
-          range: `'${name}'!A${String(index.get(row[0]))}`,
+    if (updates.length > 0) {
+      await this.sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: this.spreadsheetId,
+        requestBody: {
           valueInputOption: 'RAW',
-          requestBody: { values: [row] },
-        }),
-      ),
-    );
+          data: updates.map((row) => ({
+            range: `'${name}'!A${String(index.get(row[0]))}`,
+            values: [row],
+          })),
+        },
+      });
+    }
     if (inserts.length > 0) {
       await this.sheets.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
