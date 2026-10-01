@@ -85,22 +85,27 @@ function handleTaskActionPage_(event) {
     });
 
     const actionBaseUrl = ScriptApp.getService().getUrl();
-    telegramCall_(properties.botToken, 'editMessageText', {
-      chat_id: String(taskMessage.data.chatId),
-      message_id: Number(taskMessage.data.messageId),
-      text: buildTaskText_(item.data, status),
-      disable_web_page_preview: true,
-      reply_markup: {
-        inline_keyboard: buildTaskActionKeyboard_(
-          actionBaseUrl,
-          itemId,
-          token,
-          status,
-          item.data.sourceUrl,
-          item.data.source,
-        ),
-      },
-    });
+    try {
+      telegramCall_(properties.botToken, 'editMessageText', {
+        chat_id: String(taskMessage.data.chatId),
+        message_id: Number(taskMessage.data.messageId),
+        text: buildTaskText_(item.data, status),
+        disable_web_page_preview: true,
+        reply_markup: {
+          inline_keyboard: buildTaskActionKeyboard_(
+            actionBaseUrl,
+            itemId,
+            token,
+            status,
+            item.data.sourceUrl,
+            item.data.source,
+          ),
+        },
+      });
+    } catch (error) {
+      // Repetir o mesmo botão é uma operação válida e idempotente.
+      if (!/message is not modified/i.test(String(error && error.message))) throw error;
+    }
     return actionResultPage_(
       'Andamento atualizado',
       `${item.data.title} agora está como ${STATUS_LABELS[status]}. Você já pode fechar esta página.`,
