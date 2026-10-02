@@ -26,6 +26,18 @@ describe('atividades do Moodle', () => {
     ).toBe('2026-10-13T23:59:00');
   });
 
+  it('lê abertura e pontuação da atividade', () => {
+    expect(
+      parseMoodleActivity({
+        courseTitle: 'Aspectos Legais',
+        title: 'Atividade Online Pontuada 03',
+        url: 'https://saladeaula.ead.uvv.br/mod/quiz/view.php?id=8603',
+        text: 'Questionário que VALE 2,0 PONTOS. Abre: terça-feira, 6 out. 2026, 00:00 Fecha: terça-feira, 13 out. 2026, 23:59',
+        completion: 'Pendente',
+      })?.metadata,
+    ).toMatchObject({ opensAt: '2026-10-06T00:00:00', points: '2' });
+  });
+
   it('mantém link, status e prazo da atividade', () => {
     expect(
       parseMoodleActivity({

@@ -16,7 +16,7 @@ import type {
 } from './types.js';
 
 /** Aumentar quando o prompt ou o formato mudarem: força uma nova análise gradual dos itens. */
-export const AI_ANALYSIS_VERSION = '2';
+export const AI_ANALYSIS_VERSION = '3';
 
 export function createAiProvider(config: AppConfig): AiProvider | undefined {
   if (!config.AI_ENABLED) return undefined;

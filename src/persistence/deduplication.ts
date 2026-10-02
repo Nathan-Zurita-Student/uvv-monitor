@@ -100,7 +100,8 @@ function materialize(
         ? { previousHash: previous.previousHash }
         : {}),
     ...(previous?.calendarEventId ? { calendarEventId: previous.calendarEventId } : {}),
-    status: previous?.status ?? candidate.status ?? 'TODO',
+    // Status da fonte (AVA/Portal). O do usuário fica em user_task_status e é aplicado na leitura.
+    status: candidate.status ?? previous?.status ?? 'TODO',
     urgency: candidate.urgency ?? previous?.urgency ?? 'INFORMATIONAL',
     ...(candidate.metadata || Object.keys(previousAiMetadata).length > 0
       ? { metadata: { ...candidate.metadata, ...previousAiMetadata } }

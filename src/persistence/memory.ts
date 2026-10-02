@@ -1,4 +1,5 @@
 import type { AcademicItem, TelegramTaskMessage, UserTaskStatus } from '../models/academic-item.js';
+import type { NotificationLogEntry, Reminder, TelegramBatch } from '../models/bot.js';
 import type { RunHistory, TelegramState } from '../models/run.js';
 import type { AcademicRepository } from './repository.js';
 
@@ -7,6 +8,9 @@ export class InMemoryAcademicRepository implements AcademicRepository {
   readonly statuses = new Map<string, UserTaskStatus>();
   readonly runs: RunHistory[] = [];
   readonly telegramTaskMessages = new Map<string, TelegramTaskMessage>();
+  readonly reminders = new Map<string, Reminder>();
+  readonly notificationLog = new Map<string, NotificationLogEntry>();
+  readonly batches = new Map<string, TelegramBatch>();
   telegramState: TelegramState = { lastUpdateId: 0 };
 
   initialize(): Promise<void> {
@@ -37,6 +41,33 @@ export class InMemoryAcademicRepository implements AcademicRepository {
 
   upsertTelegramTaskMessage(message: TelegramTaskMessage): Promise<void> {
     this.telegramTaskMessages.set(message.itemId, structuredClone(message));
+    return Promise.resolve();
+  }
+
+  listReminders(): Promise<Reminder[]> {
+    return Promise.resolve(Array.from(this.reminders.values()));
+  }
+
+  upsertReminder(reminder: Reminder): Promise<void> {
+    this.reminders.set(reminder.itemId, structuredClone(reminder));
+    return Promise.resolve();
+  }
+
+  listNotificationLog(): Promise<NotificationLogEntry[]> {
+    return Promise.resolve(Array.from(this.notificationLog.values()));
+  }
+
+  upsertNotificationLog(entries: NotificationLogEntry[]): Promise<void> {
+    for (const entry of entries) this.notificationLog.set(entry.itemId, structuredClone(entry));
+    return Promise.resolve();
+  }
+
+  listBatches(): Promise<TelegramBatch[]> {
+    return Promise.resolve(Array.from(this.batches.values()));
+  }
+
+  insertBatch(batch: TelegramBatch): Promise<void> {
+    this.batches.set(batch.batchId, structuredClone(batch));
     return Promise.resolve();
   }
 

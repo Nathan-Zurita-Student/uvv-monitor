@@ -1,6 +1,7 @@
 import type { ItemStatus, ItemType } from '../models/academic-item.js';
 import type { DetectedItemCandidate } from '../persistence/deduplication.js';
 import { inferItemType } from '../portal/parsers.js';
+import { extractPoints } from './activity-parser.js';
 
 const DEFAULT_MOODLE_CALENDAR_URL = 'https://saladeaula.ead.uvv.br/calendar/view.php';
 
@@ -97,29 +98,65 @@ function sameMinute(left: string | undefined, right: string | undefined): boolea
   return Math.abs(leftTime - rightTime) < 60_000;
 }
 
+function toIso(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const instant = Date.parse(/(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}-03:00`);
+  return Number.isNaN(instant) ? undefined : new Date(instant).toISOString();
+}
+
 /**
- * O calendário EAD repete as atividades do AVA ("Término de X") e usa o código do curso como
- * disciplina. Marca essas repetições como contexto e troca o código pelo nome da disciplina.
+ * O calendário EAD repete as atividades do AVA ("Início de X" e "Término de X") e usa o código
+ * do curso como disciplina. Une esses eventos à atividade (que ganha data de abertura e
+ * pontuação), marca-os como contexto e troca o código pelo nome da disciplina.
  */
 export function reconcileEadCalendar(candidates: DetectedItemCandidate[]): DetectedItemCandidate[] {
   const activities = candidates.filter(
     (candidate) => candidate.metadata?.origin === 'EAD' && /\/mod\//.test(candidate.sourceUrl),
   );
+  const events = candidates.filter((candidate) => candidate.metadata?.origin === 'EAD_CALENDAR');
   const disciplineByCode = new Map<string, string>();
   const matches = new Map<DetectedItemCandidate, DetectedItemCandidate>();
-  for (const event of candidates) {
-    if (event.metadata?.origin !== 'EAD_CALENDAR') continue;
-    const key = activityKey(event.title);
-    const sameTitle = activities.filter((activity) => activityKey(activity.title) === key);
+  const sameTitle = (event: DetectedItemCandidate) =>
+    activities.filter((activity) => activityKey(activity.title) === activityKey(event.title));
+
+  // Prazos primeiro: o mesmo horário de encerramento identifica a atividade e a disciplina.
+  for (const event of events.filter((candidate) => !isOpeningEvent(candidate.title))) {
+    const options = sameTitle(event);
     const eventDate = event.officialDeadline ?? event.officialDate;
-    const exact = sameTitle.filter((activity) => sameMinute(activity.officialDeadline, eventDate));
-    const match = exact.length === 1 ? exact[0] : sameTitle.length === 1 ? sameTitle[0] : undefined;
+    const exact = options.filter((activity) => sameMinute(activity.officialDeadline, eventDate));
+    const match = exact.length === 1 ? exact[0] : options.length === 1 ? options[0] : undefined;
     if (!match) continue;
     matches.set(event, match);
-    if (event.discipline && match.discipline)
+    if (event.discipline && match.discipline) {
       disciplineByCode.set(event.discipline, match.discipline);
+    }
   }
+  // Aberturas: usa a disciplina aprendida acima para escolher entre atividades homônimas.
+  for (const event of events.filter((candidate) => isOpeningEvent(candidate.title))) {
+    const discipline = event.discipline ? disciplineByCode.get(event.discipline) : undefined;
+    const options = sameTitle(event).filter(
+      (activity) => !discipline || activity.discipline === discipline,
+    );
+    if (options.length === 1 && options[0]) matches.set(event, options[0]);
+  }
+
+  const enrichment = new Map<DetectedItemCandidate, Record<string, string>>();
+  for (const [event, activity] of matches) {
+    const extra = enrichment.get(activity) ?? {};
+    const eventDate = toIso(event.officialDate ?? event.officialDeadline);
+    if (isOpeningEvent(event.title) && eventDate && !activity.metadata?.opensAt) {
+      extra.opensAt = eventDate;
+    }
+    const points = extractPoints(event.description);
+    if (points && !activity.metadata?.points) extra.points = points;
+    enrichment.set(activity, extra);
+  }
+
   return candidates.map((candidate) => {
+    const extra = enrichment.get(candidate);
+    if (extra && Object.keys(extra).length > 0) {
+      return { ...candidate, metadata: { ...candidate.metadata, ...extra } };
+    }
     if (candidate.metadata?.origin !== 'EAD_CALENDAR') return candidate;
     const discipline = candidate.discipline
       ? (disciplineByCode.get(candidate.discipline) ?? candidate.discipline)

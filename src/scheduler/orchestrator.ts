@@ -6,6 +6,9 @@ import {
   requireTelegramCredentials,
 } from '../config/env.js';
 import { buildAgenda } from '../agenda/agenda.js';
+import { planNotifications } from '../bot/notifications.js';
+import { createRenderContext } from '../bot/screens.js';
+import { applyUserStatuses } from '../bot/status.js';
 import { GoogleCalendarGateway } from '../calendar/google-gateway.js';
 import { isCalendarSyncCandidate, syncCalendarEvent } from '../calendar/service.js';
 import { GmailGoogleGateway } from '../gmail/google-gateway.js';
@@ -20,14 +23,12 @@ import { prioritizeItems } from '../prioritization/priority.js';
 import { isMeaningfulChange } from './novelties.js';
 import { verificationWindow, type DailySlot, isWeeklyReviewRun } from './windows.js';
 import { TelegramClient } from '../telegram/client.js';
-import { formatBootstrap } from '../telegram/format.js';
 import { escapeHtml } from '../telegram/html.js';
-import { deliverNotifications, type Novelty } from '../telegram/notifier.js';
+import { deliverNotifications } from '../telegram/notifier.js';
 import { processTelegramUpdates } from '../telegram/processor.js';
 import { logger } from '../utils/logger.js';
 import { collectMoodleCalendar, reconcileEadCalendar } from '../moodle/calendar-feed.js';
 import { createAiProvider, enrichItemsWithAi } from '../ai/service.js';
-import type { AiProvider } from '../ai/types.js';
 
 export async function runMonitor(
   config: AppConfig,
@@ -51,12 +52,7 @@ export async function runMonitor(
 
   if (!config.TELEGRAM_WEBHOOK_ENABLED) {
     try {
-      await processTelegramUpdates(
-        telegram,
-        repository,
-        telegramCredentials.chatId,
-        now.toISOString(),
-      );
+      await processTelegramUpdates(telegram, repository, telegramCredentials.chatId, now);
     } catch (error) {
       run.errors.push(`Telegram getUpdates: ${error instanceof Error ? error.message : 'erro'}`);
     }
@@ -118,7 +114,11 @@ export async function runMonitor(
     ...diff.changedItems.map(({ item }) => item),
     ...diff.unchangedItems,
   ];
-  let prioritized = prioritizeItems(touched, now);
+  // O status do usuário (Telegram) vale sobre o da fonte: concluídos não gastam análise da IA.
+  let prioritized = prioritizeItems(
+    applyUserStatuses(touched, await repository.listTaskStatuses()),
+    now,
+  );
   const meaningfulChanges = diff.changedItems.filter(({ item, changes }) =>
     isMeaningfulChange(item, changes),
   );
@@ -126,10 +126,8 @@ export async function runMonitor(
     [...diff.newItems, ...meaningfulChanges.map(({ item }) => item)].map((item) => item.id),
   );
 
-  let aiProvider: AiProvider | undefined;
   try {
-    aiProvider = createAiProvider(config);
-    const ai = await enrichItemsWithAi(prioritized, aiProvider, {
+    const ai = await enrichItemsWithAi(prioritized, createAiProvider(config), {
       maxCalls: config.AI_MAX_CALLS_PER_RUN,
       maxInputCharacters: config.AI_MAX_INPUT_CHARS,
       priorityIds: noveltyIds,
@@ -144,9 +142,22 @@ export async function runMonitor(
   } catch (error) {
     run.errors.push(`IA: ${error instanceof Error ? error.message : 'erro'}`);
   }
-  await repository.upsertDetectedItems(prioritized);
+  // A planilha guarda tudo o que foi coletado com o status da fonte (inclusive o que o usuário
+  // concluiu, para o prazo continuar atualizado); o status do usuário fica em user_task_status.
+  const sourceStatusById = new Map(touched.map((item) => [item.id, item.status]));
+  const enrichedById = new Map(prioritized.map((item) => [item.id, item]));
+  await repository.upsertDetectedItems(
+    touched.map((item) => {
+      const enriched = enrichedById.get(item.id);
+      return enriched ? { ...enriched, status: item.status } : item;
+    }),
+  );
   run.itemsFound = candidates.length;
-  const allItems = prioritizeItems(await repository.listDetectedItems(), now);
+  // Relê os status depois da coleta: ações feitas no Telegram durante a execução não se perdem.
+  const allItems = prioritizeItems(
+    applyUserStatuses(await repository.listDetectedItems(), await repository.listTaskStatuses()),
+    now,
+  );
 
   const calendar = new GoogleCalendarGateway(googleCredentials, config.GOOGLE_CALENDAR_ID);
   try {
@@ -155,7 +166,13 @@ export async function runMonitor(
       const result = await syncCalendarEvent(calendar, item, config.DRY_RUN, item.firstSeenAt);
       calendarResults[result.action] = (calendarResults[result.action] ?? 0) + 1;
       if ('eventId' in result && item.calendarEventId !== result.eventId) {
-        await repository.upsertDetectedItems([{ ...item, calendarEventId: result.eventId }]);
+        await repository.upsertDetectedItems([
+          {
+            ...item,
+            status: sourceStatusById.get(item.id) ?? item.status,
+            calendarEventId: result.eventId,
+          },
+        ]);
       }
     }
     logger.info(
@@ -171,56 +188,53 @@ export async function runMonitor(
   try {
     if (run.portalStatus === 'FAILED' || run.portalStatus === 'NOT_VERIFIED') {
       await telegram.sendMessage(
-        '⚠️ <b>Portal UVV não verificado nesta execução.</b>\nGmail e Calendar continuaram sendo verificados normalmente.',
+        '⚠️ Não consegui entrar no Portal UVV agora. Gmail e Calendar foram verificados normalmente.',
       );
     }
     const eadError = run.errors.find((error) => error.startsWith('Portal AVA/EAD:'));
     if (eadError) {
       await telegram.sendMessage(
-        `⚠️ <b>Ambiente Virtual (EAD) não verificado nesta execução.</b>\n\nO Portal UVV não conseguiu gerar o acesso automático aos cursos online. ${escapeHtml(eadError.replace('Portal AVA/EAD: ', ''))}\n\nAs páginas presenciais, o Gmail e o Calendar continuaram sendo verificados normalmente.`,
+        `⚠️ Não consegui abrir o AVA nesta verificação. ${escapeHtml(eadError.replace('Portal AVA/EAD: ', ''))}`,
       );
     }
-    if (isBootstrap) await telegram.sendMessage(formatBootstrap(candidates.length));
+    if (isBootstrap) {
+      await telegram.sendMessage(
+        `✅ <b>Tudo pronto!</b>\n\nFiz a primeira leitura e encontrei ${String(candidates.length)} registros. A partir de agora te aviso só do que importa. Use /painel quando quiser ver tudo.`,
+      );
+    }
   } catch (error) {
     run.errors.push(`Telegram envio: ${error instanceof Error ? error.message : 'erro'}`);
   }
 
-  const latestById = new Map(allItems.map((item) => [item.id, item]));
-  const novelties: Novelty[] = isBootstrap
-    ? []
-    : [
-        ...diff.newItems.map((item) => ({
-          item: latestById.get(item.id) ?? item,
-          isNew: true,
-          changes: [],
-        })),
-        ...meaningfulChanges.map(({ item, changes }) => ({
-          item: latestById.get(item.id) ?? item,
-          isNew: false,
-          changes,
-        })),
-      ];
   const agenda = buildAgenda(allItems, now);
+  const plan = planNotifications({
+    agenda,
+    items: allItems,
+    log: await repository.listNotificationLog(),
+    // Na primeira leitura nada é novidade; o registro é criado em silêncio.
+    newItemIds: new Set(isBootstrap ? [] : diff.newItems.map((item) => item.id)),
+    now,
+  });
+  const context = createRenderContext({
+    now,
+    items: allItems,
+    reminders: await repository.listReminders(),
+  });
   run.errors.push(
     ...(await deliverNotifications({
       telegram,
       repository,
-      chatId: telegramCredentials.chatId,
       slot,
-      agenda,
-      novelties,
+      context,
+      plan,
       weekly: isWeeklyReviewRun(now, slot),
-      ...(config.TELEGRAM_ACTIONS_WEB_APP_URL
-        ? { actionBaseUrl: config.TELEGRAM_ACTIONS_WEB_APP_URL }
-        : {}),
-      ...(aiProvider ? { aiProvider } : {}),
     })),
   );
   logger.info(
     {
       module: 'Telegram',
       slot,
-      novelties: novelties.length,
+      notifications: plan.notifications.length,
       exams: agenda.exams.length,
       tasks: agenda.tasks.length,
       overdue: agenda.overdue.length,

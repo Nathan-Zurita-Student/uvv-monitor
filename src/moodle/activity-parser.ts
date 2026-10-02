@@ -35,17 +35,33 @@ export function cleanMoodleCourseTitle(value: string): string {
   return /^(.+?)\s+\1$/.exec(cleaned)?.[1] ?? cleaned;
 }
 
-export function extractMoodleDeadline(text: string): string | undefined {
+function extractLabeledDate(text: string, labels: string): string | undefined {
   const normalized = text
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase();
-  const match =
-    /(?:vencimento|fecha(?:r|mento)?|encerra(?:mento)?)\s*:\s*(?:[a-z]+-feira,\s*)?(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\.?\s+(\d{4}),\s*(\d{1,2}):(\d{2})/i.exec(
-      normalized,
-    );
+  const match = new RegExp(
+    `(?:${labels})\\s*:\\s*(?:[a-z]+(?:-feira)?,\\s*)?(\\d{1,2})\\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\\.?\\s+(\\d{4}),\\s*(\\d{1,2}):(\\d{2})`,
+    'i',
+  ).exec(normalized);
   if (!match?.[1] || !match[2] || !match[3] || !match[4] || !match[5]) return undefined;
-  return `${match[3]}-${months[match[2]]}-${match[1].padStart(2, '0')}T${match[4].padStart(2, '0')}:${match[5]}:00`;
+  return `${match[3]}-${months[match[2]] ?? '01'}-${match[1].padStart(2, '0')}T${match[4].padStart(2, '0')}:${match[5]}:00`;
+}
+
+export function extractMoodleDeadline(text: string): string | undefined {
+  return extractLabeledDate(text, 'vencimento|fecha(?:r|mento)?|encerra(?:mento)?');
+}
+
+/** Quando a atividade abre ("Abre: terça-feira, 6 out. 2026, 00:00"). */
+export function extractMoodleOpening(text: string): string | undefined {
+  return extractLabeledDate(text, 'abre|abertura|disponivel a partir de');
+}
+
+/** Pontuação informada no texto ("vale 2,0 pontos"), normalizada para "2" ou "2,5". */
+export function extractPoints(text: string): string | undefined {
+  const match = /vale(?:r[aá])?\s*(\d+(?:[.,]\d+)?)\s*pont/i.exec(text);
+  if (!match?.[1]) return undefined;
+  return match[1].replace('.', ',').replace(/,0+$/, '');
 }
 
 export function parseMoodleActivity(input: MoodleActivityInput): PortalItem | undefined {
@@ -57,6 +73,8 @@ export function parseMoodleActivity(input: MoodleActivityInput): PortalItem | un
   const description = clean(input.text) || title;
   const type = inferItemType(`${title} ${description}`);
   const officialDeadline = extractMoodleDeadline(description);
+  const opensAt = extractMoodleOpening(description);
+  const points = extractPoints(description);
   const completion = clean(input.completion);
   const nonGradedExercise =
     /exerc[ií]cio de fixa[cç][aã]o/i.test(title) || /n[aã]o [ée] pontuad[oa]/i.test(description);
@@ -79,6 +97,8 @@ export function parseMoodleActivity(input: MoodleActivityInput): PortalItem | un
       moodleActivityId: activityId,
       moodleModule: url.pathname.split('/')[2] ?? '',
       completion,
+      ...(opensAt ? { opensAt } : {}),
+      ...(points ? { points } : {}),
       ...(nonGradedExercise ? { graded: 'false' } : {}),
       ...(contextOnly ? { contextOnly: 'true' } : {}),
     },

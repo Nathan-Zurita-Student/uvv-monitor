@@ -59,11 +59,15 @@ export interface AcademicItem {
   metadata?: Record<string, string>;
 }
 
+/** Status definido pelo usuário no bot; tem prioridade sobre o status da fonte (AVA/Portal). */
 export interface UserTaskStatus {
   itemId: string;
   status: ItemStatus;
   updatedAt: string;
   source: 'TELEGRAM' | 'SYSTEM' | 'USER';
+  previousStatus?: ItemStatus;
+  completedAt?: string;
+  ignoredAt?: string;
 }
 
 export interface TelegramTaskMessage {

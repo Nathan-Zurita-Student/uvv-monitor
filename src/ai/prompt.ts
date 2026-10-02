@@ -31,7 +31,7 @@ Regras obrigatórias:
 
 Campos:
 - displayTitle: título curto e claro (até 60 caracteres), sem o nome da disciplina e sem datas. Exemplos: "Prova do 1º bimestre", "Trabalho prático em grupo", "Pesquisa de avaliação institucional".
-- plainSummary: 1 ou 2 frases curtas dizendo o que é e o que importa para o aluno.
+- plainSummary: 1 frase curta e natural falando direto com o aluno (você), como um colega organizado explicaria. Diga o que é e o que importa, sem repetir título, disciplina ou data. Exemplo: "É um trabalho em grupo de até 4 pessoas, apresentado no laboratório." Evite linguagem formal ou burocrática.
 - actionItems: o que o aluno precisa fazer concretamente; lista vazia se não houver ação.
 - studyTopics: apenas conteúdos de estudo explicitamente mencionados.
 - materials: apenas arquivos, links ou materiais explicitamente mencionados.

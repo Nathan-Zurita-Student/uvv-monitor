@@ -85,19 +85,59 @@ as demais fontes.
 
 ## Telegram
 
-O foco das mensagens é **provas, trabalhos e tarefas**. Tudo é enviado em HTML (negrito, links
-curtos e seções), sem URLs soltas.
+O bot funciona como um assistente pessoal focado em **provas, trabalhos e tarefas**: mensagens
+curtas, em linguagem natural, e todas as ações acontecem dentro do Telegram com botões
+(`callback_data`). Links são usados só para abrir a atividade original no AVA/Portal.
 
-| Horário       | O que chega                                                                                                                                                |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Toda execução | Cartão para cada prova/entrega nova ou alterada (com análise da IA e botões) e um único resumo "Outros avisos" para o restante                             |
-| 12h           | **Painel acadêmico** fixado no chat: provas, trabalhos e tarefas com contagem regressiva, atrasadas, itens sem data, outras pendências e 2ª chamada/finais |
-| 17h           | "Ainda hoje", somente se algo vence no dia                                                                                                                 |
-| 21h           | **Amanhã**: provas e entregas do dia seguinte, foco sugerido e próximos 7 dias; perguntas de andamento para até 3 itens próximos ou atrasados              |
-| Domingo, 21h  | **Sua semana**, agrupada por dia                                                                                                                           |
+### Como ele avisa
 
-Provas que já aconteceram somem do painel, 2ª chamada e prova final ficam em uma seção separada e
-a mesma prova vinda de fontes diferentes aparece uma vez só.
+| Quando           | O que chega                                                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Uma novidade     | Um cartão curto: tipo, nome, disciplina, prazo, o que importa e ações                                                                  |
+| Várias novidades | Um resumo ("2 atividades novas, nenhuma prova nova...") com **📋 Ver novidades**, que navega pelos itens na mesma mensagem (⬅️ 1/3 ➡️) |
+| Prazo chegando   | Um alerta por nível: até 3 dias, no dia e quando atrasa                                                                                |
+| 12h              | Painel em menu, fixado no chat                                                                                                         |
+| 21h              | "Amanhã", só se houver prova ou entrega                                                                                                |
+| Domingo, 21h     | Os próximos 14 dias                                                                                                                    |
+
+Um item só é avisado de novo quando algo relevante muda: prazo, conteúdo publicado pelo professor,
+urgência ou um lembrete pedido. A assinatura de cada aviso fica na aba `notification_log`.
+
+### Ações
+
+- **✅ Concluir**, **🙈 Ignorar** e **↩️ Reabrir** executam na hora, com **↩️ Desfazer** logo depois.
+- **⏰ Lembrar** abre: 30 min, 1 hora, hoje à noite, amanhã cedo, 1 dia antes ou um horário
+  escrito livremente ("18:30", "amanhã 9h", "15/10 14h", "em 2 horas").
+- **📖 Abrir** leva à atividade original.
+- `/painel` abre o menu: Provas, Atividades, Atrasadas, Sem data, Calendário e Atualizar, com
+  ⬅️ Voltar em cada tela.
+
+### Status
+
+O status coletado do AVA/Portal (`detected_items.status`) fica separado do status definido no bot
+(`user_task_status`, com `completedAt`/`ignoredAt`). O status do usuário vale para a organização
+pessoal, então uma atividade concluída não volta como pendente quando é encontrada de novo. A única
+exceção é o próprio AVA confirmar a conclusão.
+
+### Arquitetura do bot
+
+```text
+src/bot/        núcleo puro: telas, botões (callbacks), lembretes, prioridade e notificações
+src/gas/        adaptador do Google Apps Script (webhook, planilha, lembretes)
+apps-script/    Code.gs (entradas) + Bot.gs (gerado por npm run build:gas)
+```
+
+O mesmo núcleo roda em dois lugares:
+
+- **Apps Script (webhook)**: responde aos botões e comandos na hora e envia os lembretes por um
+  acionador a cada 5 minutos. Veja [`apps-script/README.md`](apps-script/README.md).
+- **GitHub Actions**: coleta 3 vezes ao dia e envia novidades, alertas e o painel.
+
+Com o webhook ativo, defina `TELEGRAM_WEBHOOK_ENABLED=true` nos GitHub Secrets para que o
+monitor não tente ler o Telegram por `getUpdates`. Com `false`, os cliques são processados só nas
+execuções agendadas (modo de reserva).
+
+### Configuração do bot
 
 1. Abra uma conversa com `@BotFather` no Telegram.
 2. Use `/newbot`, escolha nome e username e copie o token.
@@ -112,33 +152,6 @@ Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body '{}'
 
 O número em `result[].message.chat.id` é o `TELEGRAM_CHAT_ID`. Apenas mensagens desse chat são
 processadas.
-
-Comandos:
-
-```text
-/feito UVV-ABC123
-/fazendo UVV-ABC123
-/pendente UVV-ABC123
-/ignorar UVV-ABC123
-/status UVV-ABC123
-```
-
-Respostas como “já fiz”, “estou fazendo” e “ainda não fiz” também funcionam quando incluem o ID ou
-são respostas a uma mensagem que contém o ID.
-
-### Botões de andamento em tempo real
-
-Mantenha `TELEGRAM_WEBHOOK_ENABLED=false` para que comandos escritos sejam lidos por `getUpdates`
-nas execuções agendadas. Para atualizar uma tarefa imediatamente por botão, publique o Web App
-descrito em [`apps-script/README.md`](apps-script/README.md) e configure sua URL em
-`TELEGRAM_ACTIONS_WEB_APP_URL`.
-
-Cada cartão de prova ou entrega (novidades e perguntas de andamento das 21h) traz botões de
-“Não comecei”, “Em andamento”, “Concluído”, “Aguardando” e um link para a fonte original. Cada link
-usa um token aleatório exclusivo, salvo na aba `telegram_task_messages` junto com o modelo HTML do
-cartão. Ao tocar, o Web App valida o token, atualiza a planilha e reedita a mensagem mantendo o
-layout. Esse fluxo evita o
-redirecionamento HTTP do Apps Script que impede seu uso confiável como webhook do Telegram.
 
 ## Google Cloud e OAuth
 
@@ -175,8 +188,8 @@ UVV_USERNAME
 UVV_PASSWORD
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
-TELEGRAM_WEBHOOK_ENABLED # mantenha false no modo getUpdates
-TELEGRAM_ACTIONS_WEB_APP_URL # URL pública /exec do Apps Script
+TELEGRAM_WEBHOOK_ENABLED # true quando o webhook do Apps Script estiver ativo
+TELEGRAM_ACTIONS_WEB_APP_URL # opcional; usado só por botões de mensagens antigas
 GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
 GOOGLE_REFRESH_TOKEN
@@ -314,9 +327,9 @@ Schedules podem atrasar alguns minutos. `RUN_SLOT` preserva a janela acadêmica 
 
 ### Botão inline fica carregando
 
-Confirme que `TELEGRAM_ACTIONS_WEB_APP_URL` aponta para a URL pública terminada em `/exec`, publique
-uma nova versão do Apps Script e execute novamente o monitor. Os botões de andamento devem ser
-links URL, não callbacks dependentes de webhook.
+No editor do Apps Script, execute `webhookInfo`: a URL deve terminar em `/exec?secret=***` e não
+deve haver `last_error_message`. Depois de publicar uma nova versão, execute `setupWebhook` de
+novo. Veja os erros em **Execuções** no editor do Apps Script.
 
 ### Uma fonte falhou
 

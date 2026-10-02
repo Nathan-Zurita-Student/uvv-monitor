@@ -1,125 +1,28 @@
 import { google, type sheets_v4 } from 'googleapis';
 import type { GoogleCredentials } from '../config/env.js';
 import { createGoogleOAuthClient } from '../google/auth.js';
-import type {
-  AcademicItem,
-  ItemSource,
-  ItemStatus,
-  ItemType,
-  TelegramTaskMessage,
-  Urgency,
-  UserTaskStatus,
-} from '../models/academic-item.js';
+import type { AcademicItem, TelegramTaskMessage, UserTaskStatus } from '../models/academic-item.js';
+import type { NotificationLogEntry, Reminder, TelegramBatch } from '../models/bot.js';
 import type { RunHistory, TelegramState } from '../models/run.js';
 import type { AcademicRepository } from './repository.js';
+import {
+  academicItemFromRow,
+  academicItemToRow,
+  batchFromRow,
+  batchToRow,
+  notificationLogFromRow,
+  notificationLogToRow,
+  reminderFromRow,
+  reminderToRow,
+  tables,
+  telegramTaskMessageFromRow,
+  telegramTaskMessageToRow,
+  userStatusFromRow,
+  userStatusToRow,
+  type TableName,
+} from './rows.js';
 
-const tables = {
-  detected_items: [
-    'id',
-    'externalId',
-    'source',
-    'sourceUrl',
-    'discipline',
-    'title',
-    'description',
-    'type',
-    'officialDate',
-    'officialDeadline',
-    'firstSeenAt',
-    'lastSeenAt',
-    'contentHash',
-    'previousHash',
-    'calendarEventId',
-    'status',
-    'urgency',
-    'metadata',
-  ],
-  user_task_status: ['itemId', 'status', 'updatedAt', 'source'],
-  run_history: [
-    'runId',
-    'startedAt',
-    'finishedAt',
-    'portalStatus',
-    'gmailStatus',
-    'calendarStatus',
-    'itemsFound',
-    'errors',
-  ],
-  telegram_state: ['lastUpdateId', 'panelMessageId'],
-  telegram_task_messages: [
-    'itemId',
-    'chatId',
-    'messageId',
-    'lastRenderedStatus',
-    'updatedAt',
-    'actionToken',
-    'renderedText',
-  ],
-} as const;
-
-type TableName = keyof typeof tables;
-
-function parseJsonRecord(value: string | undefined): Record<string, string> | undefined {
-  if (!value) return undefined;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
-    return Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, string] => typeof entry[1] === 'string',
-      ),
-    );
-  } catch {
-    return undefined;
-  }
-}
-
-export function academicItemToRow(item: AcademicItem): string[] {
-  return [
-    item.id,
-    item.externalId,
-    item.source,
-    item.sourceUrl,
-    item.discipline ?? '',
-    item.title,
-    item.description,
-    item.type,
-    item.officialDate ?? '',
-    item.officialDeadline ?? '',
-    item.firstSeenAt,
-    item.lastSeenAt,
-    item.contentHash,
-    item.previousHash ?? '',
-    item.calendarEventId ?? '',
-    item.status,
-    item.urgency,
-    JSON.stringify(item.metadata ?? {}),
-  ];
-}
-
-export function academicItemFromRow(row: string[]): AcademicItem {
-  const metadata = parseJsonRecord(row[17]);
-  return {
-    id: row[0] ?? '',
-    externalId: row[1] ?? '',
-    source: (row[2] ?? 'PORTAL') as ItemSource,
-    sourceUrl: row[3] ?? '',
-    ...(row[4] ? { discipline: row[4] } : {}),
-    title: row[5] ?? '',
-    description: row[6] ?? '',
-    type: (row[7] ?? 'NOTICE') as ItemType,
-    ...(row[8] ? { officialDate: row[8] } : {}),
-    ...(row[9] ? { officialDeadline: row[9] } : {}),
-    firstSeenAt: row[10] ?? '',
-    lastSeenAt: row[11] ?? '',
-    contentHash: row[12] ?? '',
-    ...(row[13] ? { previousHash: row[13] } : {}),
-    ...(row[14] ? { calendarEventId: row[14] } : {}),
-    status: (row[15] ?? 'TODO') as ItemStatus,
-    urgency: (row[16] ?? 'INFORMATIONAL') as Urgency,
-    ...(metadata ? { metadata } : {}),
-  };
-}
+export { academicItemFromRow, academicItemToRow } from './rows.js';
 
 export class GoogleSheetsAcademicRepository implements AcademicRepository {
   constructor(
@@ -173,6 +76,7 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
   }
 
   private async upsertRows(name: TableName, rows: string[][]): Promise<void> {
+    if (rows.length === 0) return;
     const existing = await this.rows(name);
     const index = new Map(existing.map((row, offset) => [row[0], offset + 2]));
     const updates = rows.filter((row) => index.has(row[0]));
@@ -210,48 +114,47 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
   }
 
   async listTaskStatuses(): Promise<UserTaskStatus[]> {
-    return (await this.rows('user_task_status'))
-      .filter((row) => row[0])
-      .map((row) => ({
-        itemId: row[0] ?? '',
-        status: (row[1] ?? 'TODO') as ItemStatus,
-        updatedAt: row[2] ?? '',
-        source: (row[3] ?? 'SYSTEM') as UserTaskStatus['source'],
-      }));
+    return (await this.rows('user_task_status')).filter((row) => row[0]).map(userStatusFromRow);
   }
 
   async upsertTaskStatus(status: UserTaskStatus): Promise<void> {
-    await this.upsertRows('user_task_status', [
-      [status.itemId, status.status, status.updatedAt, status.source],
-    ]);
+    await this.upsertRows('user_task_status', [userStatusToRow(status)]);
   }
 
   async listTelegramTaskMessages(): Promise<TelegramTaskMessage[]> {
     return (await this.rows('telegram_task_messages'))
       .filter((row) => row[0])
-      .map((row) => ({
-        itemId: row[0] ?? '',
-        chatId: row[1] ?? '',
-        messageId: Number(row[2] ?? 0),
-        lastRenderedStatus: (row[3] ?? 'TODO') as ItemStatus,
-        updatedAt: row[4] ?? '',
-        ...(row[5] ? { actionToken: row[5] } : {}),
-        ...(row[6] ? { renderedText: row[6] } : {}),
-      }));
+      .map(telegramTaskMessageFromRow);
   }
 
   async upsertTelegramTaskMessage(message: TelegramTaskMessage): Promise<void> {
-    await this.upsertRows('telegram_task_messages', [
-      [
-        message.itemId,
-        message.chatId,
-        String(message.messageId),
-        message.lastRenderedStatus,
-        message.updatedAt,
-        message.actionToken ?? '',
-        message.renderedText ?? '',
-      ],
-    ]);
+    await this.upsertRows('telegram_task_messages', [telegramTaskMessageToRow(message)]);
+  }
+
+  async listReminders(): Promise<Reminder[]> {
+    return (await this.rows('reminders')).filter((row) => row[0]).map(reminderFromRow);
+  }
+
+  async upsertReminder(reminder: Reminder): Promise<void> {
+    await this.upsertRows('reminders', [reminderToRow(reminder)]);
+  }
+
+  async listNotificationLog(): Promise<NotificationLogEntry[]> {
+    return (await this.rows('notification_log'))
+      .filter((row) => row[0])
+      .map(notificationLogFromRow);
+  }
+
+  async upsertNotificationLog(entries: NotificationLogEntry[]): Promise<void> {
+    await this.upsertRows('notification_log', entries.map(notificationLogToRow));
+  }
+
+  async listBatches(): Promise<TelegramBatch[]> {
+    return (await this.rows('telegram_batches')).filter((row) => row[0]).map(batchFromRow);
+  }
+
+  async insertBatch(batch: TelegramBatch): Promise<void> {
+    await this.upsertRows('telegram_batches', [batchToRow(batch)]);
   }
 
   async appendRunHistory(run: RunHistory): Promise<void> {

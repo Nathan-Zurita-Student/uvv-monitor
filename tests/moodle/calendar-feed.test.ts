@@ -94,6 +94,41 @@ END:VCALENDAR`);
     expect(untouched?.discipline).toBe('Aspectos Legais da Tecnologia da Informação');
   });
 
+  it('junta início, término e atividade do AVA em uma única atividade', () => {
+    const activity = {
+      externalId: 'ead:/mod/quiz/view.php:8603',
+      source: 'PORTAL' as const,
+      sourceUrl: 'https://saladeaula.ead.uvv.br/mod/quiz/view.php?id=8603',
+      discipline: 'Aspectos Legais da Tecnologia da Informação',
+      title: 'Atividade Online Pontuada 03',
+      description: 'Fecha: terça-feira, 13 out. 2026, 23:59',
+      type: 'ASSIGNMENT' as const,
+      officialDeadline: '2026-10-13T23:59:00',
+      metadata: { origin: 'EAD' },
+    };
+    const events = parseMoodleCalendar(`BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:open-3@uvv\r
+DTSTART:20261006T030000Z\r
+SUMMARY:Início de Atividade Online Pontuada 03\r
+DESCRIPTION:Essa é uma atividade online pontuada do tipo QUESTIONÁRIO E VALE 2,0 PONTOS.\r
+CATEGORIES:dcp_aspLegTecInf\r
+END:VEVENT\r
+BEGIN:VEVENT\r
+UID:close-3@uvv\r
+DTSTART:20261014T025900Z\r
+SUMMARY:Término de Atividade Online Pontuada 03\r
+DESCRIPTION:Essa é uma atividade online pontuada do tipo QUESTIONÁRIO E VALE 2,0 PONTOS.\r
+CATEGORIES:dcp_aspLegTecInf\r
+END:VEVENT\r
+END:VCALENDAR`);
+    const [merged, opening, closing] = reconcileEadCalendar([activity, ...events]);
+    expect(merged?.metadata).toMatchObject({ opensAt: '2026-10-06T03:00:00.000Z', points: '2' });
+    expect(opening?.metadata?.contextOnly).toBe('true');
+    expect(closing?.metadata?.contextOnly).toBe('true');
+    expect(opening?.discipline).toBe('Aspectos Legais da Tecnologia da Informação');
+  });
+
   it('valida domínio e conteúdo antes de confiar no feed', async () => {
     await expect(collectMoodleCalendar('https://example.com/calendar.ics')).rejects.toThrow(
       /domínio oficial/,

@@ -11,6 +11,8 @@ export interface TelegramMessageOptions {
   /** Mensagens são HTML por padrão; use `false` para texto puro. */
   html?: boolean;
   silent?: boolean;
+  /** Abre o campo de resposta (usado em "Escolher horário"). */
+  forceReply?: boolean;
 }
 
 /** O que o restante do sistema precisa do Telegram; facilita testes com um envio falso. */
@@ -58,18 +60,20 @@ export class TelegramClient implements TelegramSender {
     for (const [index, chunk] of chunks.entries()) {
       const isLastChunk = index === chunks.length - 1;
       const replyMarkup =
-        isLastChunk && options.inlineKeyboard
-          ? { inline_keyboard: options.inlineKeyboard }
-          : isLastChunk && options.replyKeyboard
-            ? {
-                keyboard: options.replyKeyboard.map((row) =>
-                  row.map((buttonText) => ({ text: buttonText })),
-                ),
-                resize_keyboard: true,
-                one_time_keyboard: true,
-                input_field_placeholder: 'Escolha uma opção',
-              }
-            : undefined;
+        isLastChunk && options.forceReply
+          ? { force_reply: true, input_field_placeholder: 'Ex.: amanhã 9h' }
+          : isLastChunk && options.inlineKeyboard && options.inlineKeyboard.length > 0
+            ? { inline_keyboard: options.inlineKeyboard }
+            : isLastChunk && options.replyKeyboard
+              ? {
+                  keyboard: options.replyKeyboard.map((row) =>
+                    row.map((buttonText) => ({ text: buttonText })),
+                  ),
+                  resize_keyboard: true,
+                  one_time_keyboard: true,
+                  input_field_placeholder: 'Escolha uma opção',
+                }
+              : undefined;
       sent = await this.call<TelegramMessage>('sendMessage', {
         chat_id: this.chatId,
         text: chunk,
@@ -99,6 +103,18 @@ export class TelegramClient implements TelegramSender {
     await this.call('answerCallbackQuery', {
       callback_query_id: callbackQueryId,
       ...(text ? { text } : {}),
+    });
+  }
+
+  async editMessageReplyMarkup(
+    chatId: string,
+    messageId: number,
+    inlineKeyboard: TelegramButton[][],
+  ): Promise<void> {
+    await this.call('editMessageReplyMarkup', {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: inlineKeyboard },
     });
   }
 

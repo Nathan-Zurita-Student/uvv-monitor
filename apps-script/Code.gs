@@ -1,3 +1,45 @@
+/**
+ * UVV Monitor — Web App do bot no Telegram.
+ *
+ * As funções abaixo apenas repassam para o pacote gerado em Bot.gs (npm run build:gas), que
+ * contém o bot inteiro (botões, painel, lembretes). O restante do arquivo atende os botões
+ * de link de mensagens antigas.
+ */
+
+/** Webhook do Telegram (callback_query e mensagens). */
+function doPost(e) {
+  return UVVBot.doPost(e);
+}
+
+/** Acionador de tempo a cada 5 minutos: envia os lembretes pedidos no Telegram. */
+function processReminders() {
+  return UVVBot.processReminders();
+}
+
+/** Execute uma vez depois de publicar uma nova versão do App da Web. */
+function setupWebhook() {
+  const result = UVVBot.setupWebhook();
+  console.log(result);
+  return result;
+}
+
+function deleteWebhook() {
+  return UVVBot.deleteWebhook();
+}
+
+/** Envia o painel ao Telegram (teste rápido depois de publicar). */
+function sendPanel() {
+  return UVVBot.sendPanel();
+}
+
+function webhookInfo() {
+  const result = UVVBot.webhookInfo();
+  console.log(result);
+  return result;
+}
+
+// --- Botões de link de mensagens antigas (antes dos botões internos do Telegram) ---
+
 const TASK_STATUS_BY_CALLBACK = Object.freeze({
   not_started: 'TODO',
   in_progress: 'IN_PROGRESS',
@@ -150,231 +192,6 @@ function escapeHtml_(value) {
     .replace(/'/g, '&#39;');
 }
 
-function doPost(event) {
-  const properties = getRequiredProperties_();
-  if (!event || !event.parameter || event.parameter.secret !== properties.webhookSecret) {
-    return ContentService.createTextOutput('unauthorized');
-  }
-
-  let update;
-  try {
-    update = JSON.parse(event.postData.contents);
-  } catch (_error) {
-    return ContentService.createTextOutput('invalid-json');
-  }
-
-  try {
-    if (update.callback_query) handleTaskCallback_(update.callback_query, properties);
-    else if (update.message && update.message.text) handleTextMessage_(update.message, properties);
-  } catch (error) {
-    if (update.callback_query && update.callback_query.id) {
-      answerCallback_(
-        properties.botToken,
-        update.callback_query.id,
-        'Não consegui atualizar agora. Tente novamente.',
-      );
-    }
-    console.error(error instanceof Error ? error.message : String(error));
-  }
-  return ContentService.createTextOutput('ok');
-}
-
-function setupWebhook() {
-  const properties = getRequiredProperties_();
-  const deploymentUrl = ScriptApp.getService().getUrl();
-  if (!deploymentUrl)
-    throw new Error('Publique o projeto como Web App antes de configurar o webhook.');
-  const webhookUrl = `${deploymentUrl}?secret=${encodeURIComponent(properties.webhookSecret)}`;
-  return telegramCall_(properties.botToken, 'setWebhook', {
-    url: webhookUrl,
-    allowed_updates: ['message', 'callback_query'],
-    drop_pending_updates: false,
-  });
-}
-
-function deleteWebhook() {
-  const properties = getRequiredProperties_();
-  return telegramCall_(properties.botToken, 'deleteWebhook', { drop_pending_updates: false });
-}
-
-function handleTaskCallback_(callback, properties) {
-  const chatId = callback.message && callback.message.chat && String(callback.message.chat.id);
-  if (chatId !== properties.chatId) {
-    answerCallback_(properties.botToken, callback.id, 'Você não pode alterar esta tarefa.');
-    return;
-  }
-  const parsed = parseTaskCallback_(callback.data || '');
-  if (!parsed) {
-    answerCallback_(properties.botToken, callback.id, 'Este botão não é mais válido.');
-    return;
-  }
-
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) {
-    answerCallback_(
-      properties.botToken,
-      callback.id,
-      'Outra atualização está em andamento. Tente novamente.',
-    );
-    return;
-  }
-  try {
-    const spreadsheet = SpreadsheetApp.openById(properties.sheetId);
-    const item = findRecord_(spreadsheet, 'detected_items', 'id', parsed.itemId);
-    if (!item) {
-      answerCallback_(properties.botToken, callback.id, 'Essa tarefa não foi encontrada.');
-      return;
-    }
-
-    updateRecordField_(item, 'status', parsed.status);
-    upsertRecord_(spreadsheet, 'user_task_status', 'itemId', {
-      itemId: parsed.itemId,
-      status: parsed.status,
-      updatedAt: new Date().toISOString(),
-      source: 'TELEGRAM',
-    });
-    upsertRecord_(spreadsheet, 'telegram_task_messages', 'itemId', {
-      itemId: parsed.itemId,
-      chatId,
-      messageId: callback.message.message_id,
-      lastRenderedStatus: parsed.status,
-      updatedAt: new Date().toISOString(),
-    });
-
-    const taskMessage = findRecord_(spreadsheet, 'telegram_task_messages', 'itemId', parsed.itemId);
-    telegramCall_(
-      properties.botToken,
-      'editMessageText',
-      Object.assign(
-        {
-          chat_id: chatId,
-          message_id: callback.message.message_id,
-          disable_web_page_preview: true,
-          reply_markup: {
-            inline_keyboard: buildTaskKeyboard_(
-              parsed.itemId,
-              parsed.status,
-              item.data.sourceUrl,
-              item.data.source,
-            ),
-          },
-        },
-        taskMessageBody_(taskMessage, item.data, parsed.status),
-      ),
-    );
-    answerCallback_(
-      properties.botToken,
-      callback.id,
-      `Status atualizado para ${STATUS_LABELS[parsed.status].replace(/^[^\s]+\s/, '')}.`,
-    );
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function handleTextMessage_(message, properties) {
-  if (String(message.chat.id) !== properties.chatId) return;
-  const text = String(message.text || '').trim();
-  if (/^\/(start|ajuda)(?:@\w+)?\b/i.test(text)) {
-    sendText_(
-      properties.botToken,
-      properties.chatId,
-      'Olá! Cada prioridade possui botões próprios. Toque em uma opção para atualizar o andamento imediatamente. Os comandos /feito, /fazendo, /pendente, /ignorar e /status também continuam disponíveis.',
-    );
-    return;
-  }
-
-  const replyText =
-    message.reply_to_message && message.reply_to_message.text
-      ? String(message.reply_to_message.text)
-      : '';
-  const itemIdMatch = `${text} ${replyText}`.match(/\bUVV-[A-Z0-9]{4,10}\b/i);
-  if (!itemIdMatch) return;
-  const itemId = itemIdMatch[0].toUpperCase();
-  const normalized = normalize_(text);
-  let status;
-  if (/^\/feito\b/i.test(text) || /\b(ja fiz|terminei|concluido|conclui)\b/.test(normalized))
-    status = 'DONE';
-  else if (
-    /^\/fazendo\b/i.test(text) ||
-    /\b(estou fazendo|ja comecei|em andamento)\b/.test(normalized)
-  )
-    status = 'IN_PROGRESS';
-  else if (/^\/pendente\b/i.test(text) || /\b(nao comecei|ainda nao fiz)\b/.test(normalized))
-    status = 'TODO';
-  else if (/^\/ignorar\b/i.test(text)) status = 'IGNORED';
-
-  const spreadsheet = SpreadsheetApp.openById(properties.sheetId);
-  const item = findRecord_(spreadsheet, 'detected_items', 'id', itemId);
-  if (!item) {
-    sendText_(properties.botToken, properties.chatId, `Não encontrei a tarefa ${itemId}.`);
-    return;
-  }
-  if (/^\/status\b/i.test(text)) {
-    sendText_(
-      properties.botToken,
-      properties.chatId,
-      `📌 ${item.data.title}\n📊 Situação atual: ${STATUS_LABELS[item.data.status] || item.data.status}\n🆔 ${itemId}`,
-    );
-    return;
-  }
-  if (!status) return;
-
-  const lock = LockService.getScriptLock();
-  lock.waitLock(5000);
-  try {
-    updateRecordField_(item, 'status', status);
-    upsertRecord_(spreadsheet, 'user_task_status', 'itemId', {
-      itemId,
-      status,
-      updatedAt: new Date().toISOString(),
-      source: 'TELEGRAM',
-    });
-  } finally {
-    lock.releaseLock();
-  }
-  sendText_(
-    properties.botToken,
-    properties.chatId,
-    `Atualizei “${item.data.title}” para ${STATUS_LABELS[status]}.`,
-  );
-}
-
-function parseTaskCallback_(value) {
-  const match = String(value).match(
-    /^task:(UVV-[A-Z0-9]{4,10}):(not_started|in_progress|completed|waiting)$/i,
-  );
-  if (!match) return null;
-  const callbackStatus = match[2].toLowerCase();
-  return {
-    itemId: match[1].toUpperCase(),
-    status: TASK_STATUS_BY_CALLBACK[callbackStatus],
-  };
-}
-
-function buildTaskKeyboard_(itemId, selectedStatus, sourceUrl, source) {
-  function statusButton(text, status) {
-    const callbackStatus = CALLBACK_BY_TASK_STATUS[status];
-    return {
-      text: status === selectedStatus ? `${text} ✓` : text,
-      callback_data: `task:${itemId}:${callbackStatus}`,
-    };
-  }
-  const keyboard = [
-    [statusButton('⏳ Não comecei', 'TODO'), statusButton('🔄 Em andamento', 'IN_PROGRESS')],
-    [statusButton('✅ Concluído', 'DONE'), statusButton('⏸️ Aguardando', 'WAITING')],
-  ];
-  if (/^https:\/\//i.test(String(sourceUrl || ''))) {
-    keyboard.push([
-      {
-        text: source === 'PORTAL' ? '🔗 Abrir no Portal UVV' : '🔗 Abrir informação',
-        url: sourceUrl,
-      },
-    ]);
-  }
-  return keyboard;
-}
-
 function buildTaskActionKeyboard_(baseUrl, itemId, token, selectedStatus, sourceUrl, source) {
   function statusButton(text, status) {
     const url = `${baseUrl}?item=${encodeURIComponent(itemId)}&status=${encodeURIComponent(
@@ -451,22 +268,6 @@ function upsertRecord_(spreadsheet, sheetName, keyName, data) {
   else sheet.appendRow(row);
 }
 
-function answerCallback_(botToken, callbackId, text) {
-  try {
-    telegramCall_(botToken, 'answerCallbackQuery', { callback_query_id: callbackId, text });
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-  }
-}
-
-function sendText_(botToken, chatId, text) {
-  return telegramCall_(botToken, 'sendMessage', {
-    chat_id: chatId,
-    text,
-    disable_web_page_preview: true,
-  });
-}
-
 function telegramCall_(botToken, method, payload) {
   const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
     method: 'post',
@@ -481,15 +282,6 @@ function telegramCall_(botToken, method, payload) {
     );
   }
   return body.result;
-}
-
-function normalize_(value) {
-  return String(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 function getRequiredProperties_() {

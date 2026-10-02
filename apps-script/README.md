@@ -1,34 +1,50 @@
-# Ações gratuitas do Telegram
+# Bot do Telegram no Google Apps Script
 
-Este Google Apps Script recebe os cliques dos botões como links seguros. O monitor principal continua no GitHub Actions; o Web App trata somente a atualização de andamento.
+O Web App do Apps Script é o webhook do bot: recebe cada toque em botão (`callback_query`) e cada
+comando, atualiza a planilha e edita a própria mensagem na hora. Ele também envia os lembretes
+pedidos no Telegram. A coleta continua no GitHub Actions.
 
-## Publicação
+## Arquivos
 
-1. Execute `npm run sheets:setup` para criar a aba `telegram_task_messages`.
-2. Acesse [script.google.com](https://script.google.com), crie um projeto e copie `Code.gs` e `appsscript.json` desta pasta.
+- `Code.gs`: funções de entrada (`doPost`, `processReminders`, `setupWebhook`, `webhookInfo`,
+  `sendPanel`) e o atendimento dos botões de link de mensagens antigas (`doGet`).
+- `Bot.gs`: gerado por `npm run build:gas` a partir de `src/bot` e `src/gas`. Não edite à mão.
+- `appsscript.json`: fuso horário, runtime V8, escopos (planilha e requisições externas) e Web App.
+
+## Primeira publicação
+
+1. Execute `npm run sheets:setup` (ou o monitor) para criar as abas na planilha.
+2. Em [script.google.com](https://script.google.com), crie um projeto com `Code.gs`, `Bot.gs` e
+   `appsscript.json` desta pasta.
 3. Em **Configurações do projeto → Propriedades do script**, crie:
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
    - `GOOGLE_SHEET_ID`
-   - `TELEGRAM_WEBHOOK_SECRET` — use uma sequência aleatória longa, com pelo menos 32 caracteres.
-4. Em **Implantar → Nova implantação → App da Web**:
-   - executar como você;
-   - acesso: qualquer pessoa.
-5. Autorize somente Sheets e conexões externas.
-6. No `.env` local e nos GitHub Secrets, mantenha `TELEGRAM_WEBHOOK_ENABLED=false`.
-7. Defina `TELEGRAM_ACTIONS_WEB_APP_URL` com a URL pública terminada em `/exec`.
-8. Execute o monitor para gerar novas mensagens com tokens de ação.
+   - `TELEGRAM_WEBHOOK_SECRET`: sequência aleatória longa, com pelo menos 32 caracteres.
+4. **Implantar → Nova implantação → App da Web**: executar como você, acesso: qualquer pessoa.
+5. Execute `setupWebhook` no editor. O resultado mostra a URL com `secret=***`.
+6. Em **Acionadores**, adicione `processReminders` baseado em tempo, a cada 5 minutos.
+7. Nos GitHub Secrets, defina `TELEGRAM_WEBHOOK_ENABLED=true`.
+8. Execute `sendPanel` para receber o painel e testar os botões.
 
 ## Atualização
 
-Quando `Code.gs` mudar, cole o novo conteúdo no editor do Apps Script, salve e use
-**Implantar → Gerenciar implantações → ✏️ Editar → Versão: Nova versão → Implantar**. Editar a
-implantação existente mantém a mesma URL `/exec`, então nenhum secret precisa mudar.
+Depois de mudar o código do bot:
 
-Desde a versão com cartões em HTML, o monitor salva o texto de cada cartão na coluna
-`renderedText` da aba `telegram_task_messages`. O Web App reaproveita esse modelo ao trocar o
-andamento, preservando o layout. Mensagens antigas, sem modelo, continuam no formato simples.
+1. `npm run build:gas` (o `npm run check` falha se `Bot.gs` estiver desatualizado).
+2. Cole `Code.gs` e `Bot.gs` no editor e salve.
+3. **Implantar → Gerenciar implantações → ✏️ Editar → Versão: Nova versão → Implantar**. Editar a
+   implantação existente mantém a mesma URL `/exec`.
 
-As funções `setupWebhook` e `deleteWebhook` permanecem apenas para compatibilidade. O fluxo recomendado não registra webhook, pois o Content Service do Apps Script responde por redirecionamento.
+## Como o webhook responde
+
+O `doPost` responde com `HtmlService`, que devolve HTTP 200 direto. O `ContentService` responde com
+redirecionamento, e o Telegram trataria isso como falha e reenviaria o update. Mesmo assim, cada
+`update_id` é registrado no cache por 6 horas, então uma entrega repetida não executa a ação de
+novo. As ações também são idempotentes: tocar duas vezes em "Concluir" não muda nada.
+
+Use `webhookInfo` para conferir a situação (`pending_update_count`, `last_error_message`).
+`deleteWebhook` volta ao modo de reserva, em que o GitHub Actions lê os cliques por `getUpdates`
+(nesse caso, defina `TELEGRAM_WEBHOOK_ENABLED=false`).
 
 Nunca coloque os valores das propriedades no repositório.

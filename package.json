@@ -2,7 +2,7 @@
   "name": "uvv-monitor",
   "version": "0.1.0",
   "private": true,
-  "description": "Assistente acadêmico pessoal para monitoramento seguro e somente leitura da UVV.",
+  "description": "Assistente acadÃªmico pessoal para monitoramento seguro e somente leitura da UVV.",
   "type": "module",
   "engines": {
     "node": ">=22 <25"
@@ -15,7 +15,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build:gas -- --check",
+    "build:gas": "node scripts/build-gas.mjs",
     "portal:inspect": "tsx src/cli/inspect-portal.ts",
     "portal:inspect:authenticated": "tsx src/cli/inspect-authenticated-portal.ts",
     "portal:collect": "tsx src/cli/collect-portal.ts",
@@ -44,6 +45,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.5.2",
+    "esbuild": "^0.28.2",
     "eslint": "^10.0.1",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.6.2",
