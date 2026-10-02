@@ -7,7 +7,7 @@ pedidos no Telegram. A coleta continua no GitHub Actions.
 ## Arquivos
 
 - `Code.gs`: funções de entrada (`doPost`, `processReminders`, `setupWebhook`, `webhookInfo`,
-  `sendPanel`) e o atendimento dos botões de link de mensagens antigas (`doGet`).
+  `sendPanel`, `refreshCache`) e o atendimento dos botões de link de mensagens antigas (`doGet`).
 - `Bot.gs`: gerado por `npm run build:gas` a partir de `src/bot` e `src/gas`. Não edite à mão.
 - `appsscript.json`: fuso horário, runtime V8, escopos (planilha e requisições externas) e Web App.
 
@@ -47,6 +47,20 @@ O `doPost` responde com `HtmlService`, que devolve HTTP 200 direto. O `ContentSe
 redirecionamento, e o Telegram trataria isso como falha e reenviaria o update. Mesmo assim, cada
 `update_id` é registrado no cache por 6 horas, então uma entrega repetida não executa a ação de
 novo. As ações também são idempotentes: tocar duas vezes em "Concluir" não muda nada.
+
+### Velocidade
+
+Abrir e ler a planilha leva 2 segundos ou mais, então o bot guarda uma cópia comprimida das abas
+no `CacheService` (atividades separadas do estado do usuário):
+
+1. O toque é respondido antes de qualquer leitura (o botão para de carregar na hora).
+2. A mensagem é redesenhada a partir da cópia, em cerca de 0,1 s.
+3. Só depois a ação é gravada na planilha, e a cópia é atualizada junto.
+
+A cópia é refeita da planilha quando some do cache, quando um toque cita uma atividade ou um
+lote que ela não tem (coleta nova), ao fim de cada coleta (o monitor chama o webhook com
+`{"uvv":"refresh"}`) e pelo `processReminders` se tiver mais de 30 minutos. `refreshCache` faz
+isso à mão e mostra um resumo.
 
 Use `webhookInfo` para conferir a situação (`pending_update_count`, `last_error_message`).
 `deleteWebhook` volta ao modo de reserva, em que o GitHub Actions lê os cliques por `getUpdates`.

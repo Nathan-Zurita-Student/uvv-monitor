@@ -26,6 +26,7 @@ import { TelegramClient } from '../telegram/client.js';
 import { escapeHtml } from '../telegram/html.js';
 import { deliverNotifications } from '../telegram/notifier.js';
 import { processTelegramUpdates } from '../telegram/processor.js';
+import { refreshWebhookCache } from '../telegram/webhook-cache.js';
 import { logger } from '../utils/logger.js';
 import { collectMoodleCalendar, reconcileEadCalendar } from '../moodle/calendar-feed.js';
 import { createAiProvider, enrichItemsWithAi } from '../ai/service.js';
@@ -249,4 +250,17 @@ export async function runMonitor(
   run.finishedAt = new Date().toISOString();
   await repository.appendRunHistory(run);
   logger.info({ run }, 'Execução finalizada');
+
+  // Os botões do Telegram leem uma cópia da planilha no Apps Script: renova com esta coleta.
+  try {
+    const webhook = await telegram.webhookUrl();
+    if (webhook && (await refreshWebhookCache(webhook))) {
+      logger.info({ module: 'Telegram' }, 'Cópia do bot no Apps Script atualizada');
+    }
+  } catch (error) {
+    logger.warn(
+      { module: 'Telegram', error: error instanceof Error ? error.message : 'erro' },
+      'Não consegui atualizar a cópia do bot no Apps Script',
+    );
+  }
 }

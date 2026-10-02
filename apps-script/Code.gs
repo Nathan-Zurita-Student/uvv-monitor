@@ -44,6 +44,16 @@ function sendPanel() {
   return UVVBot.sendPanel();
 }
 
+/**
+ * Relê a planilha e renova a cópia em cache usada pelos botões. O monitor já faz isso ao fim de
+ * cada coleta; rode à mão depois de editar a planilha.
+ */
+function refreshCache() {
+  const result = UVVBot.refreshCache();
+  console.log(result);
+  return result;
+}
+
 function webhookInfo() {
   const result = UVVBot.webhookInfo();
   console.log(result);

@@ -34,9 +34,27 @@ declare const UrlFetchApp: {
 declare const CacheService: {
   getScriptCache(): {
     get(key: string): string | null;
+    getAll(keys: string[]): Record<string, string>;
     put(key: string, value: string, expirationInSeconds?: number): void;
+    putAll(values: Record<string, string>, expirationInSeconds?: number): void;
     remove(key: string): void;
+    removeAll(keys: string[]): void;
   };
+};
+
+declare namespace GasUtilities {
+  interface Blob {
+    getBytes(): number[];
+    getDataAsString(): string;
+  }
+}
+
+declare const Utilities: {
+  newBlob(data: string | number[], contentType?: string): GasUtilities.Blob;
+  gzip(blob: GasUtilities.Blob): GasUtilities.Blob;
+  ungzip(blob: GasUtilities.Blob): GasUtilities.Blob;
+  base64Encode(data: number[]): string;
+  base64Decode(encoded: string): number[];
 };
 
 declare const LockService: {
@@ -47,7 +65,10 @@ declare const LockService: {
 };
 
 declare const PropertiesService: {
-  getScriptProperties(): { getProperty(key: string): string | null };
+  getScriptProperties(): {
+    getProperty(key: string): string | null;
+    getProperties(): Record<string, string | undefined>;
+  };
 };
 
 declare const HtmlService: { createHtmlOutput(html: string): unknown };

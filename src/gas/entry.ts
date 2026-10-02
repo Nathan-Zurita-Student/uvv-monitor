@@ -3,10 +3,16 @@
  * Empacotado por `npm run build:gas` em apps-script/Bot.gs; o Code.gs só repassa as chamadas.
  * Não importe módulos que dependam do Node aqui.
  */
-import { dueReminders, handleUpdate, type BotEffect, type PendingInput } from '../bot/core.js';
+import {
+  dueReminders,
+  handleUpdate,
+  quickAnswer,
+  referencedData,
+  type BotEffect,
+  type PendingInput,
+} from '../bot/core.js';
 import { createRenderContext } from '../bot/screens.js';
 import { applyUserStatuses } from '../bot/status.js';
-import type { Reminder } from '../models/bot.js';
 import {
   academicItemFromRow,
   batchFromRow,
@@ -27,12 +33,12 @@ interface BotProperties {
 }
 
 function properties(): BotProperties {
-  const store = PropertiesService.getScriptProperties();
+  const values = PropertiesService.getScriptProperties().getProperties();
   const result = {
-    botToken: store.getProperty('TELEGRAM_BOT_TOKEN') ?? '',
-    chatId: store.getProperty('TELEGRAM_CHAT_ID') ?? '',
-    sheetId: store.getProperty('GOOGLE_SHEET_ID') ?? '',
-    webhookSecret: store.getProperty('TELEGRAM_WEBHOOK_SECRET') ?? '',
+    botToken: values.TELEGRAM_BOT_TOKEN ?? '',
+    chatId: values.TELEGRAM_CHAT_ID ?? '',
+    sheetId: values.GOOGLE_SHEET_ID ?? '',
+    webhookSecret: values.TELEGRAM_WEBHOOK_SECRET ?? '',
   };
   const missing = Object.entries(result)
     .filter(([, value]) => !value)
@@ -50,8 +56,6 @@ function cell(value: unknown): string {
 
 /** Acesso às abas da planilha com as mesmas colunas usadas pelo monitor (persistence/rows). */
 class SheetStore {
-  private readonly cache = new Map<TableName, string[][]>();
-
   constructor(private readonly spreadsheet: GasSheets.Spreadsheet) {}
 
   private sheet(name: TableName): GasSheets.Sheet {
@@ -63,38 +67,186 @@ class SheetStore {
   }
 
   rows(name: TableName): string[][] {
-    const cached = this.cache.get(name);
-    if (cached) return cached;
-    const values = this.sheet(name)
+    return this.sheet(name)
       .getDataRange()
       .getValues()
       .slice(1)
-      .map((row) => row.map(cell));
-    const rows = values.filter((row) => row[0]);
-    this.cache.set(name, rows);
-    return rows;
+      .map((row) => row.map(cell))
+      .filter((row) => row[0]);
   }
 
+  /** Atualiza a linha com a mesma chave (1ª coluna) ou acrescenta; lê só a coluna das chaves. */
   upsert(name: TableName, row: string[]): void {
     const sheet = this.sheet(name);
-    const values = sheet.getDataRange().getValues();
-    const index = values.findIndex(
-      (existing, position) => position > 0 && cell(existing[0]) === row[0],
-    );
-    if (index > 0) sheet.getRange(index + 1, 1, 1, row.length).setValues([row]);
+    const lastRow = sheet.getLastRow();
+    const keys = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 1).getValues() : [];
+    const index = keys.findIndex((existing) => cell(existing[0]) === row[0]);
+    if (index >= 0) sheet.getRange(index + 2, 1, 1, row.length).setValues([row]);
     else sheet.appendRow(row);
-    this.cache.delete(name);
-  }
-
-  lastSyncAt(): string | undefined {
-    const runs = this.rows('run_history');
-    const finished = runs
-      .map((row) => row[2] ?? '')
-      .filter(Boolean)
-      .sort();
-    return finished[finished.length - 1];
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Cópia da planilha no cache
+
+/**
+ * Abrir e ler a planilha leva 2 s ou mais; a cópia comprimida no CacheService sai em ~0,1 s.
+ * As atividades (grandes, mudam só na coleta) ficam separadas do estado do usuário (pequeno,
+ * muda a cada toque). O monitor pede uma cópia nova ao fim de cada coleta, e o acionador de
+ * lembretes a renova se estiver com mais de 30 minutos.
+ */
+interface Snapshot {
+  builtAt: string;
+  lastSyncAt?: string;
+  items: string[][];
+  statuses: string[][];
+  reminders: string[][];
+  batches: string[][];
+}
+
+type SnapshotState = Omit<Snapshot, 'items'>;
+
+const ITEMS_KEY = 'snap.items';
+const STATE_KEY = 'snap.state';
+/** O CacheService aceita até 100 KB por valor. */
+const CHUNK_SIZE = 90_000;
+const MAX_CHUNKS = 10;
+/** Máximo permitido pelo CacheService (6 horas). */
+const CACHE_TTL_SECONDS = 21_600;
+const MAX_SNAPSHOT_AGE_MS = 30 * 60_000;
+/** Lotes antigos (paginadores de mensagens velhas) são lidos da planilha quando aparecem. */
+const MAX_CACHED_BATCHES = 100;
+
+function chunkKeys(prefix: string): string[] {
+  return [
+    prefix,
+    ...Array.from({ length: MAX_CHUNKS }, (_, index) => `${prefix}.${String(index)}`),
+  ];
+}
+
+function pack(prefix: string, value: unknown): Record<string, string> | undefined {
+  const blob = Utilities.newBlob(JSON.stringify(value), 'application/json');
+  const encoded = Utilities.base64Encode(Utilities.gzip(blob).getBytes());
+  const count = Math.ceil(encoded.length / CHUNK_SIZE);
+  if (count > MAX_CHUNKS) return undefined;
+  const values: Record<string, string> = { [prefix]: String(count) };
+  for (let index = 0; index < count; index += 1) {
+    values[`${prefix}.${String(index)}`] = encoded.slice(
+      index * CHUNK_SIZE,
+      (index + 1) * CHUNK_SIZE,
+    );
+  }
+  return values;
+}
+
+function unpack<T>(prefix: string, values: Record<string, string>): T | undefined {
+  const count = Number(values[prefix] ?? 0);
+  if (!count) return undefined;
+  const parts: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const part = values[`${prefix}.${String(index)}`];
+    // O cache pode descartar um pedaço a qualquer momento: aí a cópia é refeita.
+    if (!part) return undefined;
+    parts.push(part);
+  }
+  try {
+    const blob = Utilities.newBlob(Utilities.base64Decode(parts.join('')), 'application/x-gzip');
+    return JSON.parse(Utilities.ungzip(blob).getDataAsString()) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function readState(): SnapshotState | undefined {
+  return unpack<SnapshotState>(
+    STATE_KEY,
+    CacheService.getScriptCache().getAll(chunkKeys(STATE_KEY)),
+  );
+}
+
+function readSnapshot(): Snapshot | undefined {
+  const values = CacheService.getScriptCache().getAll([
+    ...chunkKeys(STATE_KEY),
+    ...chunkKeys(ITEMS_KEY),
+  ]);
+  const state = unpack<SnapshotState>(STATE_KEY, values);
+  const items = unpack<string[][]>(ITEMS_KEY, values);
+  return state && items ? { ...state, items } : undefined;
+}
+
+function saveSnapshot(snapshot: Snapshot, withItems: boolean): void {
+  const cache = CacheService.getScriptCache();
+  const { items, ...state } = snapshot;
+  const packedState = pack(STATE_KEY, {
+    ...state,
+    batches: state.batches.slice(-MAX_CACHED_BATCHES),
+  });
+  const packedItems = withItems ? pack(ITEMS_KEY, items) : {};
+  if (!packedState || !packedItems) {
+    // Grande demais para o cache: cada toque volta a ler a planilha (mais lento, mas correto).
+    cache.removeAll([STATE_KEY, ITEMS_KEY]);
+    return;
+  }
+  cache.putAll({ ...packedState, ...packedItems }, CACHE_TTL_SECONDS);
+}
+
+/** Lê as abas usadas pelo bot e guarda a cópia no cache. */
+function buildSnapshot(props: BotProperties): Snapshot {
+  const store = new SheetStore(SpreadsheetApp.openById(props.sheetId));
+  const finished = store
+    .rows('run_history')
+    .map((row) => row[2] ?? '')
+    .filter(Boolean)
+    .sort();
+  const lastSyncAt = finished[finished.length - 1];
+  const snapshot: Snapshot = {
+    builtAt: new Date().toISOString(),
+    ...(lastSyncAt ? { lastSyncAt } : {}),
+    items: store.rows('detected_items'),
+    statuses: store.rows('user_task_status'),
+    reminders: store.rows('reminders'),
+    batches: store.rows('telegram_batches'),
+  };
+  try {
+    saveSnapshot(snapshot, true);
+  } catch (error) {
+    console.error(`Cópia em cache não salva: ${String(error)}`);
+  }
+  return snapshot;
+}
+
+function covers(snapshot: Snapshot, needed: { itemIds: string[]; batchIds: string[] }): boolean {
+  const has = (rows: string[][], key: string) => rows.some((row) => row[0] === key);
+  return (
+    needed.itemIds.every((id) => has(snapshot.items, id)) &&
+    needed.batchIds.every((id) => has(snapshot.batches, id))
+  );
+}
+
+/** Cópia do cache; relê a planilha se ela sumiu ou não tem o que o toque precisa (coleta nova). */
+function loadSnapshot(
+  props: BotProperties,
+  needed: { itemIds: string[]; batchIds: string[] } = { itemIds: [], batchIds: [] },
+): Snapshot {
+  const cached = readSnapshot();
+  return cached && covers(cached, needed) ? cached : buildSnapshot(props);
+}
+
+function renderContext(snapshot: Snapshot, now: Date) {
+  return createRenderContext({
+    now,
+    items: applyUserStatuses(
+      snapshot.items.map(academicItemFromRow),
+      snapshot.statuses.map(userStatusFromRow),
+    ),
+    reminders: snapshot.reminders.map(reminderFromRow),
+    batches: snapshot.batches.map(batchFromRow),
+    ...(snapshot.lastSyncAt ? { lastSyncAt: snapshot.lastSyncAt } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Telegram e gravação
 
 function telegram(token: string, method: string, payload: Record<string, unknown>): void {
   const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/${method}`, {
@@ -123,84 +275,100 @@ function readPending(chatId: string): PendingInput | undefined {
   }
 }
 
-function applyEffects(effects: BotEffect[], props: BotProperties, store: SheetStore): void {
+interface SheetWrite {
+  table: 'user_task_status' | 'reminders';
+  row: string[];
+}
+
+/** Executa as ações no Telegram e devolve o que precisa ser gravado na planilha. */
+function sendEffects(effects: BotEffect[], props: BotProperties): SheetWrite[] {
   const chat = { chat_id: props.chatId };
+  const writes: SheetWrite[] = [];
   for (const effect of effects) {
-    switch (effect.type) {
-      case 'answer':
-        try {
+    try {
+      switch (effect.type) {
+        case 'answer':
           telegram(props.botToken, 'answerCallbackQuery', {
             callback_query_id: effect.callbackId,
             ...(effect.text ? { text: effect.text } : {}),
           });
-        } catch (error) {
-          console.error(String(error));
-        }
-        break;
-      case 'edit':
-        telegram(props.botToken, 'editMessageText', {
-          ...chat,
-          message_id: effect.messageId,
-          text: effect.text,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-          reply_markup: { inline_keyboard: effect.keyboard },
-        });
-        break;
-      case 'editKeyboard':
-        telegram(props.botToken, 'editMessageReplyMarkup', {
-          ...chat,
-          message_id: effect.messageId,
-          reply_markup: { inline_keyboard: effect.keyboard },
-        });
-        break;
-      case 'send':
-        telegram(props.botToken, 'sendMessage', {
-          ...chat,
-          text: effect.text,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-          ...(effect.forceReply
-            ? { reply_markup: { force_reply: true, input_field_placeholder: 'Ex.: amanhã 9h' } }
-            : effect.keyboard && effect.keyboard.length > 0
-              ? { reply_markup: { inline_keyboard: effect.keyboard } }
-              : {}),
-        });
-        break;
-      case 'setStatus':
-        store.upsert('user_task_status', userStatusToRow(effect.record));
-        break;
-      case 'setReminder':
-        store.upsert('reminders', reminderToRow(effect.reminder));
-        break;
-      case 'setPending':
-        if (effect.pending) {
-          CacheService.getScriptCache().put(
-            pendingKey(props.chatId),
-            JSON.stringify(effect.pending),
-            900,
-          );
-        } else {
-          CacheService.getScriptCache().remove(pendingKey(props.chatId));
-        }
-        break;
+          break;
+        case 'edit':
+          telegram(props.botToken, 'editMessageText', {
+            ...chat,
+            message_id: effect.messageId,
+            text: effect.text,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            reply_markup: { inline_keyboard: effect.keyboard },
+          });
+          break;
+        case 'editKeyboard':
+          telegram(props.botToken, 'editMessageReplyMarkup', {
+            ...chat,
+            message_id: effect.messageId,
+            reply_markup: { inline_keyboard: effect.keyboard },
+          });
+          break;
+        case 'send':
+          telegram(props.botToken, 'sendMessage', {
+            ...chat,
+            text: effect.text,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            ...(effect.forceReply
+              ? { reply_markup: { force_reply: true, input_field_placeholder: 'Ex.: amanhã 9h' } }
+              : effect.keyboard && effect.keyboard.length > 0
+                ? { reply_markup: { inline_keyboard: effect.keyboard } }
+                : {}),
+          });
+          break;
+        case 'setStatus':
+          writes.push({ table: 'user_task_status', row: userStatusToRow(effect.record) });
+          break;
+        case 'setReminder':
+          writes.push({ table: 'reminders', row: reminderToRow(effect.reminder) });
+          break;
+        case 'setPending':
+          if (effect.pending) {
+            CacheService.getScriptCache().put(
+              pendingKey(props.chatId),
+              JSON.stringify(effect.pending),
+              900,
+            );
+          } else {
+            CacheService.getScriptCache().remove(pendingKey(props.chatId));
+          }
+          break;
+      }
+    } catch (error) {
+      // Uma mensagem que não pôde ser editada (apagada, antiga) não impede gravar a ação.
+      console.error(String(error));
     }
   }
+  return writes;
 }
 
-function renderContext(store: SheetStore, now: Date) {
-  const items = applyUserStatuses(
-    store.rows('detected_items').map(academicItemFromRow),
-    store.rows('user_task_status').map(userStatusFromRow),
-  );
-  const lastSyncAt = store.lastSyncAt();
-  return createRenderContext({
-    now,
-    items,
-    reminders: store.rows('reminders').map(reminderFromRow),
-    batches: store.rows('telegram_batches').map(batchFromRow),
-    ...(lastSyncAt ? { lastSyncAt } : {}),
-  });
+function withRow(rows: string[][], row: string[]): string[][] {
+  const index = rows.findIndex((existing) => existing[0] === row[0]);
+  return index >= 0
+    ? rows.map((existing, position) => (position === index ? row : existing))
+    : [...rows, row];
+}
+
+/** Grava na planilha e atualiza a cópia em cache (que os próximos toques vão usar). */
+function persist(writes: SheetWrite[], snapshot: Snapshot, props: BotProperties): void {
+  if (writes.length === 0) return;
+  const store = new SheetStore(SpreadsheetApp.openById(props.sheetId));
+  let updated = snapshot;
+  for (const { table, row } of writes) {
+    store.upsert(table, row);
+    updated =
+      table === 'user_task_status'
+        ? { ...updated, statuses: withRow(updated.statuses, row) }
+        : { ...updated, reminders: withRow(updated.reminders, row) };
+  }
+  saveSnapshot(updated, false);
 }
 
 function withLock<T>(work: () => T): T {
@@ -213,9 +381,13 @@ function withLock<T>(work: () => T): T {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Funções chamadas pelo Code.gs
+
 /**
  * Webhook do Telegram. Responde com HtmlService (HTTP 200 direto, sem o redirecionamento do
- * ContentService) e ignora entregas repetidas do mesmo update.
+ * ContentService) e ignora entregas repetidas do mesmo update. O monitor também chama esta URL
+ * com `{"uvv":"refresh"}` ao fim de cada coleta para renovar a cópia em cache.
  */
 export function doPost(event: {
   parameter?: Record<string, string>;
@@ -226,25 +398,36 @@ export function doPost(event: {
     const props = properties();
     if (event.parameter?.secret !== props.webhookSecret)
       return HtmlService.createHtmlOutput('unauthorized');
-    const update = JSON.parse(event.postData?.contents ?? '{}') as TelegramUpdate;
+    const update = JSON.parse(event.postData?.contents ?? '{}') as TelegramUpdate & {
+      uvv?: string;
+    };
+    if (update.uvv === 'refresh') {
+      withLock(() => buildSnapshot(props));
+      return ok;
+    }
     const cache = CacheService.getScriptCache();
     const seenKey = `update:${String(update.update_id)}`;
     if (cache.get(seenKey)) return ok;
     cache.put(seenKey, '1', 21_600);
+    // Responde o toque antes de carregar os dados: o botão para de "carregar" na hora.
+    const quick = quickAnswer(update, props.chatId);
+    if (quick) sendEffects([quick], props);
     withLock(() => {
-      const store = new SheetStore(SpreadsheetApp.openById(props.sheetId));
       const now = new Date();
       const pending = readPending(props.chatId);
+      const snapshot = loadSnapshot(props, referencedData(update, pending));
       const effects = handleUpdate(
         update,
         {
           chatId: props.chatId,
-          context: renderContext(store, now),
+          context: renderContext(snapshot, now),
           ...(pending ? { pending } : {}),
+          ...(quick ? { answered: true } : {}),
         },
         now,
       );
-      applyEffects(effects, props, store);
+      // A mensagem é redesenhada primeiro; a planilha é gravada em seguida.
+      persist(sendEffects(effects, props), snapshot, props);
     });
   } catch (error) {
     console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
@@ -256,16 +439,38 @@ export function doPost(event: {
 export function processReminders(): void {
   const props = properties();
   withLock(() => {
-    const store = new SheetStore(SpreadsheetApp.openById(props.sheetId));
     const now = new Date();
-    const due: Reminder[] = store
-      .rows('reminders')
+    const state = readState();
+    const fresh = state && now.getTime() - Date.parse(state.builtAt) <= MAX_SNAPSHOT_AGE_MS;
+    // Sem cópia recente, relê a planilha: isso também deixa o cache pronto para os botões.
+    const built = fresh ? undefined : buildSnapshot(props);
+    const due = (built ?? state)?.reminders
       .map(reminderFromRow)
-      .filter(
-        (reminder) => !reminder.sentAt && new Date(reminder.remindAt).getTime() <= now.getTime(),
-      );
-    if (due.length === 0) return;
-    applyEffects(dueReminders(due, renderContext(store, now), now), props, store);
+      .filter((reminder) => !reminder.sentAt && Date.parse(reminder.remindAt) <= now.getTime());
+    if (!due || due.length === 0) return;
+    const snapshot = built ?? loadSnapshot(props);
+    persist(
+      sendEffects(dueReminders(due, renderContext(snapshot, now), now), props),
+      snapshot,
+      props,
+    );
+  });
+}
+
+/** Relê a planilha e renova a cópia em cache; devolve um resumo para conferência no editor. */
+export function refreshCache(): string {
+  const props = properties();
+  const started = Date.now();
+  const snapshot = withLock(() => buildSnapshot(props));
+  const cached = readSnapshot();
+  return JSON.stringify({
+    cached: Boolean(cached && cached.items.length === snapshot.items.length),
+    ms: Date.now() - started,
+    items: snapshot.items.length,
+    statuses: snapshot.statuses.length,
+    reminders: snapshot.reminders.length,
+    batches: snapshot.batches.length,
+    lastSyncAt: snapshot.lastSyncAt ?? null,
   });
 }
 
@@ -273,17 +478,17 @@ export function processReminders(): void {
 export function sendPanel(): string {
   const props = properties();
   withLock(() => {
-    const store = new SheetStore(SpreadsheetApp.openById(props.sheetId));
     const now = new Date();
+    const snapshot = loadSnapshot(props);
     const effects = handleUpdate(
       {
         update_id: 0,
         message: { message_id: 0, chat: { id: Number(props.chatId) }, text: '/painel' },
       },
-      { chatId: props.chatId, context: renderContext(store, now) },
+      { chatId: props.chatId, context: renderContext(snapshot, now) },
       now,
     );
-    applyEffects(effects, props, store);
+    persist(sendEffects(effects, props), snapshot, props);
   });
   return 'Painel enviado.';
 }

@@ -39,15 +39,81 @@ export interface BotInput {
   chatId: string;
   context: RenderContext;
   pending?: PendingInput;
+  /** O toque já foi respondido por `quickAnswer`: não responde de novo. */
+  answered?: boolean;
 }
 
-function statusPhrase(item: AcademicItem, from: ItemStatus, to: ItemStatus, undo: boolean): string {
-  const seed = `${item.id}:${to}`;
+/** Os botões de status são Concluir, Ignorar, Reabrir (volta a TODO) e Desfazer. */
+function statusPhrase(itemId: string, to: ItemStatus, undo: boolean): string {
+  const seed = `${itemId}:${to}`;
   if (undo) return pick(phrases.undone, seed);
   if (to === 'DONE') return pick(phrases.done, seed);
   if (to === 'IGNORED') return pick(phrases.ignored, seed);
-  if (to === 'TODO' && (from === 'DONE' || from === 'IGNORED')) return pick(phrases.reopened, seed);
+  if (to === 'TODO') return pick(phrases.reopened, seed);
   return '👍 Atualizado.';
+}
+
+const remindMenuText = 'Quando eu te lembro?';
+const customReminderText = 'Me diga o horário 👇';
+
+/** Aviso do toque que só depende do botão; `undefined` quando depende dos dados. */
+function instantText(action: CallbackAction): string | undefined {
+  switch (action.type) {
+    case 'noop':
+    case 'page':
+    case 'item':
+      return '';
+    case 'view':
+      return action.refresh ? undefined : '';
+    case 'status':
+      return statusPhrase(action.itemId, action.status, action.undo);
+    case 'remindMenu':
+      return remindMenuText;
+    case 'remind':
+      return action.option === 'custom' ? customReminderText : undefined;
+    case 'legacy':
+      return undefined;
+  }
+}
+
+/**
+ * Resposta ao toque que não precisa da planilha. O webhook a envia antes de carregar os dados,
+ * então o botão para de "carregar" na hora e o aviso aparece enquanto a mensagem é redesenhada.
+ */
+export function quickAnswer(
+  update: TelegramUpdate,
+  chatId: string,
+): Extract<BotEffect, { type: 'answer' }> | undefined {
+  const callback = update.callback_query;
+  if (!callback || String(callback.message?.chat.id ?? '') !== chatId) return undefined;
+  const action = decodeCallback(callback.data ?? '');
+  const text = action ? instantText(action) : undefined;
+  if (text === undefined) return undefined;
+  return { type: 'answer', callbackId: callback.id, ...(text ? { text } : {}) };
+}
+
+/** Atividades e lotes que o update precisa encontrar (para saber se a cópia em cache serve). */
+export function referencedData(
+  update: TelegramUpdate,
+  pending?: PendingInput,
+): { itemIds: string[]; batchIds: string[] } {
+  const itemIds: string[] = [];
+  const batchIds: string[] = [];
+  const addScreen = (screen: Screen) => {
+    if (screen.kind === 'pager') batchIds.push(screen.batchId);
+  };
+  const action = update.callback_query
+    ? decodeCallback(update.callback_query.data ?? '')
+    : undefined;
+  if (action) {
+    if ('itemId' in action) itemIds.push(action.itemId);
+    if ('screen' in action) addScreen(action.screen);
+    if (action.type === 'page') batchIds.push(action.batchId);
+  } else if (update.message && pending) {
+    itemIds.push(pending.itemId);
+    addScreen(pending.screen);
+  }
+  return { itemIds, batchIds };
 }
 
 function withStatus(context: RenderContext, item: AcademicItem, status: ItemStatus): RenderContext {
@@ -115,7 +181,7 @@ function handleCallback(
       });
       return [
         { type: 'setStatus', record },
-        answer(statusPhrase(item, item.status, action.status, undo)),
+        answer(statusPhrase(item.id, action.status, undo)),
         { type: 'edit', messageId, ...rendered },
       ];
     }
@@ -123,7 +189,7 @@ function handleCallback(
       const item = findItem(action.itemId);
       if (!item) return [answer('Essa atividade não está mais na lista.')];
       return [
-        answer('Quando eu te lembro?'),
+        answer(remindMenuText),
         {
           type: 'editKeyboard',
           messageId,
@@ -136,7 +202,7 @@ function handleCallback(
       if (!item) return [answer('Essa atividade não está mais na lista.')];
       if (action.option === 'custom') {
         return [
-          answer('Me diga o horário 👇'),
+          answer(customReminderText),
           {
             type: 'send',
             text: `🕒 Quando eu te lembro de <b>${escapeHtml(itemLabel(item))}</b>?\nPode responder assim: <i>18:30</i>, <i>amanhã 9h</i>, <i>15/10 14h</i> ou <i>em 2 horas</i>.`,
@@ -259,7 +325,8 @@ export function handleUpdate(update: TelegramUpdate, input: BotInput, now: Date)
         { type: 'answer', callbackId: callback.id, text: 'Esse botão é de uma versão antiga.' },
       ];
     }
-    return handleCallback(callback, action, input, now);
+    const effects = handleCallback(callback, action, input, now);
+    return input.answered ? effects.filter((effect) => effect.type !== 'answer') : effects;
   }
   const message = update.message;
   if (!message?.text || String(message.chat.id) !== input.chatId) return [];

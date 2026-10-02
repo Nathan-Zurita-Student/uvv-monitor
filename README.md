@@ -137,6 +137,9 @@ O monitor consulta `getWebhookInfo` a cada execução: com o webhook ativo, ele 
 `getUpdates`. Sem webhook, os cliques são processados só nas execuções agendadas (modo de
 reserva). `TELEGRAM_WEBHOOK_ENABLED=true` força o modo webhook.
 
+Para responder rápido, o Apps Script trabalha com uma cópia comprimida da planilha no cache. Ao
+fim de cada coleta, o monitor chama o webhook com `{"uvv":"refresh"}` para renovar essa cópia.
+
 ### Configuração do bot
 
 1. Abra uma conversa com `@BotFather` no Telegram.
@@ -330,6 +333,12 @@ Schedules podem atrasar alguns minutos. `RUN_SLOT` preserva a janela acadêmica 
 No editor do Apps Script, execute `webhookInfo`: a URL deve terminar em `/exec?secret=***` e não
 deve haver `last_error_message`. Depois de publicar uma nova versão, execute `setupWebhook` de
 novo. Veja os erros em **Execuções** no editor do Apps Script.
+
+### O bot mostra dados antigos
+
+Os botões leem uma cópia da planilha que o monitor renova a cada coleta, e o acionador de
+lembretes a cada 30 minutos. Depois de editar a planilha à mão, execute `refreshCache` no editor
+do Apps Script.
 
 ### Uma fonte falhou
 

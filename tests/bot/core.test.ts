@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { encodeCallback, type CallbackAction } from '../../src/bot/callbacks.js';
-import { dueReminders, handleUpdate, type BotEffect } from '../../src/bot/core.js';
+import {
+  dueReminders,
+  handleUpdate,
+  quickAnswer,
+  referencedData,
+  type BotEffect,
+} from '../../src/bot/core.js';
 import { createRenderContext } from '../../src/bot/screens.js';
 import type { AcademicItem } from '../../src/models/academic-item.js';
 import type { TelegramBatch } from '../../src/models/bot.js';
@@ -18,8 +24,8 @@ const batch: TelegramBatch = {
   ],
 };
 
-function click(action: CallbackAction, items: AcademicItem[] = [aop, prova]): BotEffect[] {
-  const update: TelegramUpdate = {
+function tap(action: CallbackAction): TelegramUpdate {
+  return {
     update_id: 1,
     callback_query: {
       id: 'callback-1',
@@ -27,8 +33,15 @@ function click(action: CallbackAction, items: AcademicItem[] = [aop, prova]): Bo
       message: { message_id: 99, chat: { id: Number(chatId) } },
     },
   };
+}
+
+function click(
+  action: CallbackAction,
+  items: AcademicItem[] = [aop, prova],
+  answered = false,
+): BotEffect[] {
   const context = createRenderContext({ now, items, batches: [batch] });
-  return handleUpdate(update, { chatId, context }, now);
+  return handleUpdate(tap(action), { chatId, context, ...(answered ? { answered } : {}) }, now);
 }
 
 function message(text: string, pending?: Parameters<typeof handleUpdate>[1]['pending']) {
@@ -215,6 +228,74 @@ describe('painel e novidades', () => {
       now,
     );
     expect(effects).toEqual([{ type: 'answer', callbackId: 'c', text: 'Esse botão não é seu.' }]);
+  });
+});
+
+describe('resposta imediata ao toque', () => {
+  const card = { kind: 'card', context: 'new' } as const;
+
+  it('responde na hora o que não depende da planilha, com o mesmo aviso do bot', () => {
+    const done: CallbackAction = {
+      type: 'status',
+      itemId: aop.id,
+      status: 'DONE',
+      undo: false,
+      screen: card,
+    };
+    const quick = quickAnswer(tap(done), chatId);
+    expect(quick).toEqual(find(click(done), 'answer'));
+    expect(quickAnswer(tap({ type: 'remindMenu', itemId: aop.id, screen: card }), chatId)).toEqual({
+      type: 'answer',
+      callbackId: 'callback-1',
+      text: 'Quando eu te lembro?',
+    });
+    expect(quickAnswer(tap({ type: 'view', view: 'exams', refresh: false }), chatId)).toEqual({
+      type: 'answer',
+      callbackId: 'callback-1',
+    });
+  });
+
+  it('espera os dados quando o aviso depende deles', () => {
+    expect(
+      quickAnswer(tap({ type: 'remind', itemId: aop.id, option: '1h', screen: card }), chatId),
+    ).toBeUndefined();
+    expect(quickAnswer(tap({ type: 'view', view: 'home', refresh: true }), chatId)).toBeUndefined();
+    expect(quickAnswer(tap({ type: 'view', view: 'home', refresh: false }), '7')).toBeUndefined();
+  });
+
+  it('não responde de novo um toque já respondido', () => {
+    const effects = click(
+      { type: 'status', itemId: aop.id, status: 'DONE', undo: false, screen: card },
+      [aop, prova],
+      true,
+    );
+    expect(find(effects, 'answer')).toBeUndefined();
+    expect(find(effects, 'edit')).toBeDefined();
+    expect(find(effects, 'setStatus')).toBeDefined();
+  });
+
+  it('lista as atividades e lotes que o toque precisa encontrar', () => {
+    expect(
+      referencedData(
+        tap({
+          type: 'status',
+          itemId: aop.id,
+          status: 'DONE',
+          undo: false,
+          screen: { kind: 'pager', batchId: batch.batchId, index: 1 },
+        }),
+      ),
+    ).toEqual({ itemIds: [aop.id], batchIds: [batch.batchId] });
+    expect(referencedData(tap({ type: 'page', batchId: batch.batchId, index: 0 }))).toEqual({
+      itemIds: [],
+      batchIds: [batch.batchId],
+    });
+    expect(
+      referencedData(
+        { update_id: 3, message: { message_id: 5, chat: { id: Number(chatId) }, text: '18:30' } },
+        { itemId: prova.id, screen: card },
+      ),
+    ).toEqual({ itemIds: [prova.id], batchIds: [] });
   });
 });
 
