@@ -16,11 +16,23 @@ function processReminders() {
   return UVVBot.processReminders();
 }
 
-/** Execute uma vez depois de publicar uma nova versão do App da Web. */
+/**
+ * Registra o webhook do Telegram na URL /exec publicada (propriedade WEB_APP_URL). No editor,
+ * ScriptApp.getService().getUrl() devolve a URL de teste /dev, que exige login do Google.
+ */
 function setupWebhook() {
-  const result = UVVBot.setupWebhook();
-  console.log(result);
-  return result;
+  const properties = getRequiredProperties_();
+  const url = PropertiesService.getScriptProperties().getProperty('WEB_APP_URL') || '';
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) {
+    throw new Error('Defina a propriedade WEB_APP_URL com a URL /exec do App da Web publicado.');
+  }
+  telegramCall_(properties.botToken, 'setWebhook', {
+    url: `${url}?secret=${encodeURIComponent(properties.webhookSecret)}`,
+    allowed_updates: ['message', 'callback_query'],
+    drop_pending_updates: false,
+    max_connections: 5,
+  });
+  return webhookInfo();
 }
 
 function deleteWebhook() {

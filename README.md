@@ -133,9 +133,9 @@ O mesmo núcleo roda em dois lugares:
   acionador a cada 5 minutos. Veja [`apps-script/README.md`](apps-script/README.md).
 - **GitHub Actions**: coleta 3 vezes ao dia e envia novidades, alertas e o painel.
 
-Com o webhook ativo, defina `TELEGRAM_WEBHOOK_ENABLED=true` nos GitHub Secrets para que o
-monitor não tente ler o Telegram por `getUpdates`. Com `false`, os cliques são processados só nas
-execuções agendadas (modo de reserva).
+O monitor consulta `getWebhookInfo` a cada execução: com o webhook ativo, ele não lê o Telegram por
+`getUpdates`. Sem webhook, os cliques são processados só nas execuções agendadas (modo de
+reserva). `TELEGRAM_WEBHOOK_ENABLED=true` força o modo webhook.
 
 ### Configuração do bot
 
@@ -188,7 +188,7 @@ UVV_USERNAME
 UVV_PASSWORD
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
-TELEGRAM_WEBHOOK_ENABLED # true quando o webhook do Apps Script estiver ativo
+TELEGRAM_WEBHOOK_ENABLED # opcional; o webhook do Apps Script é detectado sozinho
 TELEGRAM_ACTIONS_WEB_APP_URL # opcional; usado só por botões de mensagens antigas
 GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET

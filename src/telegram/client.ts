@@ -46,6 +46,12 @@ export class TelegramClient implements TelegramSender {
     return payload.result;
   }
 
+  /** URL do webhook ativo ("" quando o bot usa getUpdates). */
+  async webhookUrl(): Promise<string> {
+    const info = await this.call<{ url?: string }>('getWebhookInfo', {});
+    return info.url ?? '';
+  }
+
   getUpdates(offset: number): Promise<TelegramUpdate[]> {
     return this.call<TelegramUpdate[]>('getUpdates', {
       offset,

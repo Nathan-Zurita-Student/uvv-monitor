@@ -52,7 +52,11 @@ export async function runMonitor(
 
   if (!config.TELEGRAM_WEBHOOK_ENABLED) {
     try {
-      await processTelegramUpdates(telegram, repository, telegramCredentials.chatId, now);
+      // Com o webhook do Apps Script ativo, os cliques já foram tratados na hora (e o Telegram
+      // recusaria getUpdates). Só lê a fila quando não há webhook.
+      if (!(await telegram.webhookUrl())) {
+        await processTelegramUpdates(telegram, repository, telegramCredentials.chatId, now);
+      }
     } catch (error) {
       run.errors.push(`Telegram getUpdates: ${error instanceof Error ? error.message : 'erro'}`);
     }

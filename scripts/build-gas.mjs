@@ -17,8 +17,8 @@ const result = await build({
   target: 'es2019',
   charset: 'utf8',
   legalComments: 'none',
-  minifySyntax: true,
-  minifyWhitespace: true,
+  // Minificado por completo: o arquivo é colado no editor do Apps Script a cada publicação.
+  minify: true,
 });
 
 const code = `// Gerado por "npm run build:gas" a partir de src/gas/entry.ts. Não edite à mão.\n${result.outputFiles[0].text}`;
