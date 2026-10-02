@@ -17,6 +17,7 @@ import { createPortalBrowserSession } from '../portal/browser.js';
 import { ensurePortalAuthenticated } from '../portal/auth.js';
 import { collectPortalSafely } from '../portal/safe-collector.js';
 import { prioritizeItems } from '../prioritization/priority.js';
+import { isMeaningfulChange } from './novelties.js';
 import { verificationWindow, type DailySlot, isWeeklyReviewRun } from './windows.js';
 import { TelegramClient } from '../telegram/client.js';
 import { formatBootstrap } from '../telegram/format.js';
@@ -24,7 +25,7 @@ import { escapeHtml } from '../telegram/html.js';
 import { deliverNotifications, type Novelty } from '../telegram/notifier.js';
 import { processTelegramUpdates } from '../telegram/processor.js';
 import { logger } from '../utils/logger.js';
-import { collectMoodleCalendar } from '../moodle/calendar-feed.js';
+import { collectMoodleCalendar, reconcileEadCalendar } from '../moodle/calendar-feed.js';
 import { createAiProvider, enrichItemsWithAi } from '../ai/service.js';
 import type { AiProvider } from '../ai/types.js';
 
@@ -91,6 +92,7 @@ export async function runMonitor(
     } catch (error) {
       run.errors.push(`Calendário EAD: ${error instanceof Error ? error.message : 'erro'}`);
     }
+    candidates.splice(0, candidates.length, ...reconcileEadCalendar(candidates));
   }
 
   const window = verificationWindow(now, slot);
@@ -117,14 +119,9 @@ export async function runMonitor(
     ...diff.unchangedItems,
   ];
   let prioritized = prioritizeItems(touched, now);
-  const meaningfulChanges = diff.changedItems.filter(({ item, changes }) => {
-    if (changes.length === 0) return false;
-    const enrichmentOnly = changes.every(({ field }) =>
-      ['description', 'discipline'].includes(field),
-    );
-    const previousDescription = changes.find(({ field }) => field === 'description')?.before;
-    return !(enrichmentOnly && previousDescription === item.metadata?.originalTitle);
-  });
+  const meaningfulChanges = diff.changedItems.filter(({ item, changes }) =>
+    isMeaningfulChange(item, changes),
+  );
   const noveltyIds = new Set(
     [...diff.newItems, ...meaningfulChanges.map(({ item }) => item)].map((item) => item.id),
   );

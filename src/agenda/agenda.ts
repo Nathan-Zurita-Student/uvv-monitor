@@ -1,5 +1,5 @@
 import type { AcademicItem } from '../models/academic-item.js';
-import { calendarDaysUntil } from '../utils/dates.js';
+import { calendarDaysUntil, localDateKey } from '../utils/dates.js';
 import {
   disciplineKey,
   dueInstant,
@@ -115,12 +115,12 @@ function isReliableUndated(item: AcademicItem): boolean {
 function mergeDuplicates(entries: AgendaEntry[]): AgendaEntry[] {
   const merged: AgendaEntry[] = [];
   for (const entry of [...entries].sort((left, right) => rank(right.item) - rank(left.item))) {
-    const day = entry.date?.value.slice(0, 10);
+    const day = entry.due ? localDateKey(entry.due) : undefined;
     const discipline = disciplineKey(entry.item);
     const twin = merged.find(
       (candidate) =>
         candidate.kind === entry.kind &&
-        candidate.date?.value.slice(0, 10) === day &&
+        (candidate.due ? localDateKey(candidate.due) : undefined) === day &&
         disciplineKey(candidate.item) === discipline &&
         discipline !== '' &&
         (entry.kind === 'EXAM' || sameSubject(candidate.item, entry.item)),

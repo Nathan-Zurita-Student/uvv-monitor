@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { collectMoodleCalendar, parseMoodleCalendar } from '../../src/moodle/calendar-feed.js';
+import {
+  collectMoodleCalendar,
+  parseMoodleCalendar,
+  reconcileEadCalendar,
+} from '../../src/moodle/calendar-feed.js';
 
 const fixture = `BEGIN:VCALENDAR\r
 VERSION:2.0\r
@@ -35,6 +39,59 @@ describe('calendário EAD', () => {
       officialDate: '2026-10-08',
       status: 'WAITING',
     });
+  });
+
+  it('trata a abertura de uma atividade como contexto, não como prazo', () => {
+    const [opening] = parseMoodleCalendar(`BEGIN:VCALENDAR\r
+BEGIN:VEVENT\r
+UID:open-1@uvv\r
+DTSTART:20261006T030000Z\r
+SUMMARY:Início de Atividade Online Pontuada 03\r
+DESCRIPTION:Atividade online pontuada\r
+CATEGORIES:dcp_aspLegTecInf\r
+END:VEVENT\r
+END:VCALENDAR`);
+    expect(opening?.officialDeadline).toBeUndefined();
+    expect(opening?.metadata).toMatchObject({ contextOnly: 'true', calendarPhase: 'OPEN' });
+  });
+
+  it('une o término do calendário à atividade do AVA e usa o nome da disciplina', () => {
+    const activity = {
+      externalId: 'ead:/mod/quiz/view.php:8603',
+      source: 'PORTAL' as const,
+      sourceUrl: 'https://saladeaula.ead.uvv.br/mod/quiz/view.php?id=8603',
+      discipline: 'Aspectos Legais da Tecnologia da Informação',
+      title: 'Atividade Online Pontuada 03',
+      description: 'Fecha: terça-feira, 13 out. 2026, 23:59',
+      type: 'ASSIGNMENT' as const,
+      officialDeadline: '2026-10-13T23:59:00',
+      metadata: { origin: 'EAD' },
+    };
+    const closing = {
+      externalId: 'ead-calendar:close-3@uvv',
+      source: 'PORTAL' as const,
+      sourceUrl: 'https://saladeaula.ead.uvv.br/calendar/view.php',
+      discipline: 'dcp_aspLegTecInf',
+      title: 'Término de Atividade Online Pontuada 03',
+      description: 'Atividade online pontuada',
+      type: 'ASSIGNMENT' as const,
+      officialDeadline: '2026-10-14T02:59:00Z',
+      metadata: { origin: 'EAD_CALENDAR' },
+    };
+    const other = {
+      ...closing,
+      externalId: 'ead-calendar:close-9@uvv',
+      title: 'Término de Fórum avaliativo',
+      officialDeadline: '2026-10-20T02:59:00Z',
+    };
+    const [, reconciled, untouched] = reconcileEadCalendar([activity, closing, other]);
+    expect(reconciled?.metadata).toMatchObject({
+      contextOnly: 'true',
+      duplicateOf: 'ead:/mod/quiz/view.php:8603',
+    });
+    expect(reconciled?.discipline).toBe('Aspectos Legais da Tecnologia da Informação');
+    expect(untouched?.metadata?.contextOnly).toBeUndefined();
+    expect(untouched?.discipline).toBe('Aspectos Legais da Tecnologia da Informação');
   });
 
   it('valida domínio e conteúdo antes de confiar no feed', async () => {

@@ -192,11 +192,12 @@ export function formatPanel(agenda: Agenda): string[] {
   return packBlocks(header, blocks, '📚 <b>PAINEL ACADÊMICO</b> · continuação');
 }
 
-export type CardKind = 'NEW' | 'DATE_CHANGED' | 'UPDATED' | 'CHECKIN';
+export type CardKind = 'NEW' | 'DATE_SET' | 'DATE_CHANGED' | 'UPDATED' | 'CHECKIN';
 
 function cardHeadline(entry: AgendaEntry, kind: CardKind): string {
   const exam = entry.kind === 'EXAM';
   if (kind === 'NEW') return exam ? '🆕 <b>NOVA PROVA</b>' : '🆕 <b>NOVA ENTREGA</b>';
+  if (kind === 'DATE_SET') return '📅 <b>PRAZO DEFINIDO</b>';
   if (kind === 'DATE_CHANGED') return '📅 <b>DATA ALTERADA</b>';
   if (kind === 'UPDATED')
     return exam ? '✏️ <b>PROVA ATUALIZADA</b>' : '✏️ <b>ENTREGA ATUALIZADA</b>';

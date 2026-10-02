@@ -41,7 +41,7 @@ export function extractMoodleDeadline(text: string): string | undefined {
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase();
   const match =
-    /(?:vencimento|fechar|encerra(?:mento)?)\s*:\s*(?:[a-z]+-feira,\s*)?(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\.?\s+(\d{4}),\s*(\d{1,2}):(\d{2})/i.exec(
+    /(?:vencimento|fecha(?:r|mento)?|encerra(?:mento)?)\s*:\s*(?:[a-z]+-feira,\s*)?(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\.?\s+(\d{4}),\s*(\d{1,2}):(\d{2})/i.exec(
       normalized,
     );
   if (!match?.[1] || !match[2] || !match[3] || !match[4] || !match[5]) return undefined;

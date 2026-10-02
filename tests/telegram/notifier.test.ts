@@ -168,6 +168,40 @@ describe('novidades', () => {
     expect(telegram.sent[0]?.text).not.toContain('Vaga de estágio');
   });
 
+  it('diferencia prazo definido pela primeira vez de prazo alterado', async () => {
+    const task = item();
+    const definido = await deliver(
+      '17:00',
+      [task],
+      [
+        {
+          item: task,
+          isNew: false,
+          changes: [{ field: 'officialDeadline', after: '2026-10-03T23:59:00' }],
+        },
+      ],
+    );
+    expect(definido.telegram.sent[0]?.text).toContain('📅 <b>PRAZO DEFINIDO</b>');
+    const alterado = await deliver(
+      '17:00',
+      [task],
+      [
+        {
+          item: task,
+          isNew: false,
+          changes: [
+            {
+              field: 'officialDeadline',
+              before: '2026-10-01T23:59:00',
+              after: '2026-10-03T23:59:00',
+            },
+          ],
+        },
+      ],
+    );
+    expect(alterado.telegram.sent[0]?.text).toContain('📅 <b>DATA ALTERADA</b>');
+  });
+
   it('não alerta sobre prova que já aconteceu', async () => {
     const past = item({
       type: 'EXAM',

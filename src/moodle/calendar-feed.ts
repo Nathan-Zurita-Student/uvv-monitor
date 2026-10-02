@@ -72,13 +72,83 @@ function disciplineFor(event: IcsEvent): string | undefined {
   return value && !/^(evento|event|curso|course)$/i.test(value) ? value : undefined;
 }
 
+const phasePrefix = /^(in[ií]cio|abertura|t[eé]rmino|encerramento|fechamento)\s+d[eoa]s?\s+/i;
+
+/** "Início de X" só marca quando a atividade abre; não é prazo. */
+function isOpeningEvent(summary: string): boolean {
+  return /^(in[ií]cio|abertura)\b/i.test(summary.trim());
+}
+
+function activityKey(title: string): string {
+  return title
+    .trim()
+    .replace(phasePrefix, '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function sameMinute(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) return false;
+  const leftTime = Date.parse(/(?:Z|[+-]\d{2}:\d{2})$/.test(left) ? left : `${left}-03:00`);
+  const rightTime = Date.parse(/(?:Z|[+-]\d{2}:\d{2})$/.test(right) ? right : `${right}-03:00`);
+  return Math.abs(leftTime - rightTime) < 60_000;
+}
+
+/**
+ * O calendário EAD repete as atividades do AVA ("Término de X") e usa o código do curso como
+ * disciplina. Marca essas repetições como contexto e troca o código pelo nome da disciplina.
+ */
+export function reconcileEadCalendar(candidates: DetectedItemCandidate[]): DetectedItemCandidate[] {
+  const activities = candidates.filter(
+    (candidate) => candidate.metadata?.origin === 'EAD' && /\/mod\//.test(candidate.sourceUrl),
+  );
+  const disciplineByCode = new Map<string, string>();
+  const matches = new Map<DetectedItemCandidate, DetectedItemCandidate>();
+  for (const event of candidates) {
+    if (event.metadata?.origin !== 'EAD_CALENDAR') continue;
+    const key = activityKey(event.title);
+    const sameTitle = activities.filter((activity) => activityKey(activity.title) === key);
+    const eventDate = event.officialDeadline ?? event.officialDate;
+    const exact = sameTitle.filter((activity) => sameMinute(activity.officialDeadline, eventDate));
+    const match = exact.length === 1 ? exact[0] : sameTitle.length === 1 ? sameTitle[0] : undefined;
+    if (!match) continue;
+    matches.set(event, match);
+    if (event.discipline && match.discipline)
+      disciplineByCode.set(event.discipline, match.discipline);
+  }
+  return candidates.map((candidate) => {
+    if (candidate.metadata?.origin !== 'EAD_CALENDAR') return candidate;
+    const discipline = candidate.discipline
+      ? (disciplineByCode.get(candidate.discipline) ?? candidate.discipline)
+      : undefined;
+    const match = matches.get(candidate);
+    return {
+      ...candidate,
+      ...(discipline ? { discipline } : {}),
+      ...(match
+        ? {
+            metadata: {
+              ...candidate.metadata,
+              contextOnly: 'true',
+              duplicateOf: match.externalId,
+            },
+          }
+        : {}),
+    };
+  });
+}
+
 export function parseMoodleCalendar(ics: string): DetectedItemCandidate[] {
   const unfolded = ics.replace(/\r?\n[ \t]/g, '');
   return [...unfolded.matchAll(/BEGIN:VEVENT\r?\n([\s\S]*?)\r?\nEND:VEVENT/g)].flatMap((match) => {
     const event = parseEvent(match[1] ?? '');
     if (!event) return [];
     const type = inferItemType(`${event.summary} ${event.description}`);
-    const trackable = ['EXAM', 'ASSIGNMENT', 'AOP', 'DOCUMENT'].includes(type);
+    const opening = isOpeningEvent(event.summary);
+    const trackable = !opening && ['EXAM', 'ASSIGNMENT', 'AOP', 'DOCUMENT'].includes(type);
     const discipline = disciplineFor(event);
     return [
       {
@@ -91,7 +161,11 @@ export function parseMoodleCalendar(ics: string): DetectedItemCandidate[] {
         type,
         ...(trackable ? { officialDeadline: event.startsAt } : { officialDate: event.startsAt }),
         status: statusFor(type),
-        metadata: { origin: 'EAD_CALENDAR', moodleCalendarUid: event.uid },
+        metadata: {
+          origin: 'EAD_CALENDAR',
+          moodleCalendarUid: event.uid,
+          ...(opening ? { contextOnly: 'true', calendarPhase: 'OPEN' } : {}),
+        },
       },
     ];
   });

@@ -50,10 +50,11 @@ const maxNoveltyCards = 6;
 
 function cardKind(novelty: Novelty): CardKind {
   if (novelty.isNew) return 'NEW';
-  const dateChanged = novelty.changes.some(
+  const dateChange = novelty.changes.find(
     (change) => change.field === 'officialDeadline' || change.field === 'officialDate',
   );
-  return dateChanged ? 'DATE_CHANGED' : 'UPDATED';
+  if (!dateChange) return 'UPDATED';
+  return dateChange.before ? 'DATE_CHANGED' : 'DATE_SET';
 }
 
 async function sendTaskCard(

@@ -19,6 +19,11 @@ describe('atividades do Moodle', () => {
       '2026-09-15T23:59:00',
     );
     expect(extractMoodleDeadline('Fechar: 3 out. 2026, 08:05')).toBe('2026-10-03T08:05:00');
+    expect(
+      extractMoodleDeadline(
+        'Questionário Abre: terça-feira, 6 out. 2026, 00:00 Fecha: terça-feira, 13 out. 2026, 23:59',
+      ),
+    ).toBe('2026-10-13T23:59:00');
   });
 
   it('mantém link, status e prazo da atividade', () => {
