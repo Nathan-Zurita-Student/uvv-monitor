@@ -1,6 +1,9 @@
+import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 import type { ItemStatus, ItemType } from '../models/academic-item.js';
 import type { DetectedItemCandidate } from '../persistence/deduplication.js';
 import { inferItemType } from '../portal/parsers.js';
+import { ACADEMIC_TIMEZONE } from '../utils/dates.js';
 import { extractPoints } from './activity-parser.js';
 
 const DEFAULT_MOODLE_CALENDAR_URL = 'https://saladeaula.ead.uvv.br/calendar/view.php';
@@ -104,10 +107,17 @@ function toIso(value: string | undefined): string | undefined {
   return Number.isNaN(instant) ? undefined : new Date(instant).toISOString();
 }
 
+/** Horário local sem fuso, no mesmo formato dos prazos lidos no AVA. */
+function toLocalDateTime(value: string | undefined): string | undefined {
+  const iso = toIso(value);
+  return iso ? format(toZonedTime(iso, ACADEMIC_TIMEZONE), "yyyy-MM-dd'T'HH:mm:ss") : undefined;
+}
+
 /**
  * O calendário EAD repete as atividades do AVA ("Início de X" e "Término de X") e usa o código
- * do curso como disciplina. Une esses eventos à atividade (que ganha data de abertura e
- * pontuação), marca-os como contexto e troca o código pelo nome da disciplina.
+ * do curso como disciplina. Une esses eventos à atividade (que ganha data de abertura,
+ * pontuação e, enquanto o AVA não mostra o prazo, o término), marca-os como contexto e troca o
+ * código pelo nome da disciplina.
  */
 export function reconcileEadCalendar(candidates: DetectedItemCandidate[]): DetectedItemCandidate[] {
   const activities = candidates.filter(
@@ -141,12 +151,16 @@ export function reconcileEadCalendar(candidates: DetectedItemCandidate[]): Detec
   }
 
   const enrichment = new Map<DetectedItemCandidate, Record<string, string>>();
+  const deadlines = new Map<DetectedItemCandidate, string>();
   for (const [event, activity] of matches) {
     const extra = enrichment.get(activity) ?? {};
     const eventDate = toIso(event.officialDate ?? event.officialDeadline);
     if (isOpeningEvent(event.title) && eventDate && !activity.metadata?.opensAt) {
       extra.opensAt = eventDate;
     }
+    // Antes de abrir, o AVA não mostra o prazo; o término do calendário ocupa esse lugar.
+    const closesAt = isOpeningEvent(event.title) ? undefined : toLocalDateTime(eventDate);
+    if (closesAt && !activity.officialDeadline) deadlines.set(activity, closesAt);
     const points = extractPoints(event.description);
     if (points && !activity.metadata?.points) extra.points = points;
     enrichment.set(activity, extra);
@@ -154,8 +168,13 @@ export function reconcileEadCalendar(candidates: DetectedItemCandidate[]): Detec
 
   return candidates.map((candidate) => {
     const extra = enrichment.get(candidate);
-    if (extra && Object.keys(extra).length > 0) {
-      return { ...candidate, metadata: { ...candidate.metadata, ...extra } };
+    const deadline = deadlines.get(candidate);
+    if ((extra && Object.keys(extra).length > 0) || deadline) {
+      return {
+        ...candidate,
+        ...(deadline ? { officialDeadline: deadline } : {}),
+        metadata: { ...candidate.metadata, ...extra },
+      };
     }
     if (candidate.metadata?.origin !== 'EAD_CALENDAR') return candidate;
     const discipline = candidate.discipline

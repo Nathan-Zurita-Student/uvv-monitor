@@ -127,6 +127,43 @@ END:VCALENDAR`);
     expect(opening?.metadata?.contextOnly).toBe('true');
     expect(closing?.metadata?.contextOnly).toBe('true');
     expect(opening?.discipline).toBe('Aspectos Legais da Tecnologia da Informação');
+    expect(merged?.officialDeadline).toBe('2026-10-13T23:59:00');
+  });
+
+  it('usa o término do calendário como prazo enquanto o AVA ainda não mostra a data', () => {
+    const activity = (id: string, discipline: string) => ({
+      externalId: `ead:/mod/quiz/view.php:${id}`,
+      source: 'PORTAL' as const,
+      sourceUrl: `https://saladeaula.ead.uvv.br/mod/quiz/view.php?id=${id}`,
+      discipline,
+      title: 'Atividade Online Pontuada 03',
+      description: 'Atividade online pontuada',
+      type: 'ASSIGNMENT' as const,
+      metadata: { origin: 'EAD' },
+    });
+    const events = parseMoodleCalendar(`BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:close-3@uvv
+DTSTART:20261014T025900Z
+SUMMARY:Término de Atividade Online Pontuada 03
+CATEGORIES:dcp_aspLegTecInf
+END:VEVENT
+END:VCALENDAR`);
+    const [legal, closing] = reconcileEadCalendar([
+      activity('8603', 'Aspectos Legais da Tecnologia da Informação'),
+      ...events,
+    ]);
+    expect(legal?.officialDeadline).toBe('2026-10-13T23:59:00');
+    expect(closing?.metadata?.contextOnly).toBe('true');
+
+    // Com atividades homônimas e sem prazo para desempatar, nada é inventado.
+    const [first, second] = reconcileEadCalendar([
+      activity('8603', 'Aspectos Legais da Tecnologia da Informação'),
+      activity('9100', 'Empreendedorismo'),
+      ...events,
+    ]);
+    expect(first?.officialDeadline).toBeUndefined();
+    expect(second?.officialDeadline).toBeUndefined();
   });
 
   it('valida domínio e conteúdo antes de confiar no feed', async () => {
