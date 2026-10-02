@@ -12,14 +12,31 @@ const CALLBACK_BY_TASK_STATUS = Object.freeze({
   WAITING: 'waiting',
 });
 
+// Mantenha igual a taskStatusLabels em src/telegram/format.ts.
 const STATUS_LABELS = Object.freeze({
-  TODO: '⏳ Ainda não comecei',
+  TODO: '⏳ Não iniciado',
   IN_PROGRESS: '🔄 Em andamento',
   DONE: '✅ Concluído',
   WAITING: '⏸️ Aguardando',
-  NEEDS_CONFIRMATION: '⚠️ Precisa de confirmação',
+  NEEDS_CONFIRMATION: '⚠️ Precisa confirmar',
   IGNORED: '🙈 Ignorado',
 });
+
+const STATUS_PLACEHOLDER = '{{STATUS}}';
+
+/** Texto do cartão: usa o modelo HTML salvo pelo monitor ou, em mensagens antigas, o formato simples. */
+function taskMessageBody_(taskMessage, item, status) {
+  const template = taskMessage && taskMessage.data.renderedText;
+  if (template) {
+    return {
+      text: String(template)
+        .split(STATUS_PLACEHOLDER)
+        .join(STATUS_LABELS[status] || status),
+      parse_mode: 'HTML',
+    };
+  }
+  return { text: buildTaskText_(item, status) };
+}
 
 function doGet(event) {
   if (!event || !event.parameter || !event.parameter.item) {
@@ -81,22 +98,28 @@ function handleTaskActionPage_(event) {
 
     const actionBaseUrl = ScriptApp.getService().getUrl();
     try {
-      telegramCall_(properties.botToken, 'editMessageText', {
-        chat_id: String(taskMessage.data.chatId),
-        message_id: Number(taskMessage.data.messageId),
-        text: buildTaskText_(item.data, status),
-        disable_web_page_preview: true,
-        reply_markup: {
-          inline_keyboard: buildTaskActionKeyboard_(
-            actionBaseUrl,
-            itemId,
-            token,
-            status,
-            item.data.sourceUrl,
-            item.data.source,
-          ),
-        },
-      });
+      telegramCall_(
+        properties.botToken,
+        'editMessageText',
+        Object.assign(
+          {
+            chat_id: String(taskMessage.data.chatId),
+            message_id: Number(taskMessage.data.messageId),
+            disable_web_page_preview: true,
+            reply_markup: {
+              inline_keyboard: buildTaskActionKeyboard_(
+                actionBaseUrl,
+                itemId,
+                token,
+                status,
+                item.data.sourceUrl,
+                item.data.source,
+              ),
+            },
+          },
+          taskMessageBody_(taskMessage, item.data, status),
+        ),
+      );
     } catch (error) {
       // Repetir o mesmo botão é uma operação válida e idempotente.
       if (!/message is not modified/i.test(String(error && error.message))) throw error;
@@ -218,25 +241,27 @@ function handleTaskCallback_(callback, properties) {
       updatedAt: new Date().toISOString(),
     });
 
-    const currentText = callback.message.text || '';
-    const statusLine = `📊 Situação atual: ${STATUS_LABELS[parsed.status]}`;
-    const updatedText = /^📊 Situação atual:.*$/m.test(currentText)
-      ? currentText.replace(/^📊 Situação atual:.*$/m, statusLine)
-      : `${currentText}\n${statusLine}`;
-    telegramCall_(properties.botToken, 'editMessageText', {
-      chat_id: chatId,
-      message_id: callback.message.message_id,
-      text: updatedText,
-      disable_web_page_preview: true,
-      reply_markup: {
-        inline_keyboard: buildTaskKeyboard_(
-          parsed.itemId,
-          parsed.status,
-          item.data.sourceUrl,
-          item.data.source,
-        ),
-      },
-    });
+    const taskMessage = findRecord_(spreadsheet, 'telegram_task_messages', 'itemId', parsed.itemId);
+    telegramCall_(
+      properties.botToken,
+      'editMessageText',
+      Object.assign(
+        {
+          chat_id: chatId,
+          message_id: callback.message.message_id,
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: buildTaskKeyboard_(
+              parsed.itemId,
+              parsed.status,
+              item.data.sourceUrl,
+              item.data.source,
+            ),
+          },
+        },
+        taskMessageBody_(taskMessage, item.data, parsed.status),
+      ),
+    );
     answerCallback_(
       properties.botToken,
       callback.id,
@@ -380,7 +405,7 @@ function buildTaskText_(item, status) {
     deadline ? `📅 Prazo/data oficial: ${deadline}` : '📅 Prazo/data oficial: não informado',
   );
   if (item.urgency) lines.push(`⚠️ Prioridade: ${item.urgency}`);
-  lines.push(`📊 Situação atual: ${STATUS_LABELS[status] || status}`);
+  lines.push(`📊 Andamento: ${STATUS_LABELS[status] || status}`);
   if (/^https:\/\//i.test(String(item.sourceUrl || ''))) lines.push(`🔗 Link: ${item.sourceUrl}`);
   lines.push(`🆔 Código: ${item.id}`);
   return lines.join('\n');
@@ -419,7 +444,9 @@ function upsertRecord_(spreadsheet, sheetName, keyName, data) {
   const headers = existing
     ? existing.headers
     : sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
-  const row = headers.map((header) => (data[header] === undefined ? '' : data[header]));
+  // Preserva colunas não informadas (ex.: actionToken e renderedText) ao atualizar.
+  const merged = Object.assign({}, existing ? existing.data : {}, data);
+  const row = headers.map((header) => (merged[header] === undefined ? '' : merged[header]));
   if (existing) sheet.getRange(existing.row, 1, 1, headers.length).setValues([row]);
   else sheet.appendRow(row);
 }

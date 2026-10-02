@@ -85,6 +85,20 @@ as demais fontes.
 
 ## Telegram
 
+O foco das mensagens é **provas, trabalhos e tarefas**. Tudo é enviado em HTML (negrito, links
+curtos e seções), sem URLs soltas.
+
+| Horário       | O que chega                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Toda execução | Cartão para cada prova/entrega nova ou alterada (com análise da IA e botões) e um único resumo "Outros avisos" para o restante                             |
+| 12h           | **Painel acadêmico** fixado no chat: provas, trabalhos e tarefas com contagem regressiva, atrasadas, itens sem data, outras pendências e 2ª chamada/finais |
+| 17h           | "Ainda hoje", somente se algo vence no dia                                                                                                                 |
+| 21h           | **Amanhã**: provas e entregas do dia seguinte, foco sugerido e próximos 7 dias; perguntas de andamento para até 3 itens próximos ou atrasados              |
+| Domingo, 21h  | **Sua semana**, agrupada por dia                                                                                                                           |
+
+Provas que já aconteceram somem do painel, 2ª chamada e prova final ficam em uma seção separada e
+a mesma prova vinda de fontes diferentes aparece uma vez só.
+
 1. Abra uma conversa com `@BotFather` no Telegram.
 2. Use `/newbot`, escolha nome e username e copie o token.
 3. Envie uma mensagem qualquer ao novo bot.
@@ -119,10 +133,11 @@ nas execuções agendadas. Para atualizar uma tarefa imediatamente por botão, p
 descrito em [`apps-script/README.md`](apps-script/README.md) e configure sua URL em
 `TELEGRAM_ACTIONS_WEB_APP_URL`.
 
-Cada uma das três prioridades principais recebe uma mensagem própria com
-botões de “Não comecei”, “Em andamento”, “Concluído”, “Aguardando” e um link para a fonte original.
-Cada link usa um token aleatório exclusivo, salvo na aba `telegram_task_messages`. Ao tocar, o Web
-App valida o token, atualiza a planilha e edita a mensagem do Telegram. Esse fluxo evita o
+Cada cartão de prova ou entrega (novidades e perguntas de andamento das 21h) traz botões de
+“Não comecei”, “Em andamento”, “Concluído”, “Aguardando” e um link para a fonte original. Cada link
+usa um token aleatório exclusivo, salvo na aba `telegram_task_messages` junto com o modelo HTML do
+cartão. Ao tocar, o Web App valida o token, atualiza a planilha e reedita a mensagem mantendo o
+layout. Esse fluxo evita o
 redirecionamento HTTP do Apps Script que impede seu uso confiável como webhook do Telegram.
 
 ## Google Cloud e OAuth
@@ -204,10 +219,24 @@ Para testar sem executar o monitor inteiro:
 npm run ai:test
 ```
 
-O resultado da análise é guardado junto ao item na planilha. O mesmo conteúdo não é enviado
-novamente à API; uma nova análise só ocorre quando título, descrição, data ou disciplina mudam. Se
-a API estiver indisponível ou atingir a cota, a execução continua e envia a notificação tradicional.
-Antes da chamada, e-mails, identificadores numéricos longos e possíveis segredos são removidos.
+Além da explicação, a IA:
+
+- gera um título curto para avisos com títulos confusos;
+- classifica a relevância e corrige o tipo de itens de fontes livres (e-mail, mensagens e posts).
+  Pesquisas opcionais, vagas e newsletters deixam de aparecer como prova ou tarefa. Itens do
+  calendário oficial de provas e do AVA nunca são reclassificados;
+- encontra datas de prova ou entrega escritas no texto. A data só é aceita quando o trecho citado
+  existe literalmente na fonte e contém o dia; ela aparece como "data lida do texto" e não gera
+  evento no Google Calendar;
+- sugere às 21h no que focar no dia seguinte, escolhendo apenas entre as pendências reais.
+
+O orçamento de chamadas vai primeiro para as novidades da execução, depois para provas e tarefas
+pela data mais próxima e, por último, para avisos recentes. O resultado é guardado junto ao item na
+planilha e o mesmo conteúdo não é enviado novamente à API; uma nova análise só ocorre quando
+título, descrição, data ou disciplina mudam, ou quando `AI_ANALYSIS_VERSION` é incrementada. Se a
+API estiver indisponível ou atingir a cota, a execução continua com as mesmas mensagens, sem a
+análise. Antes da chamada, e-mails, identificadores numéricos longos e possíveis segredos são
+removidos.
 
 Nenhuma API de IA é necessária.
 

@@ -2,7 +2,8 @@ import type { AcademicItem, ItemStatus } from '../models/academic-item.js';
 import type { AcademicRepository } from '../persistence/repository.js';
 import { parseTelegramAction } from './commands.js';
 import type { TelegramClient } from './client.js';
-import { formatPriorityTask } from './format.js';
+import { describeDate, renderStatus } from './format.js';
+import { escapeHtml } from './html.js';
 import { buildTaskInlineKeyboard, parseTaskCallback } from './task-actions.js';
 import type { TelegramUpdate } from './types.js';
 
@@ -24,7 +25,7 @@ const helpMessage = [
 ].join('\n');
 
 function confirmation(item: AcademicItem, status: ItemStatus): string {
-  const title = item.title.replace(/\s+/g, ' ').trim();
+  const title = escapeHtml(item.title.replace(/\s+/g, ' ').trim());
   if (status === 'DONE')
     return `✅ Pronto! Marquei “${title}” como concluída. Ela não aparecerá mais nas suas pendências.`;
   if (status === 'IN_PROGRESS')
@@ -52,6 +53,11 @@ export async function processTelegramUpdates(
   if (updates.length === 0) return 0;
   const items = await repository.listDetectedItems();
   const byId = new Map(items.map((item) => [item.id.toUpperCase(), item]));
+  const templates = new Map(
+    (await repository.listTelegramTaskMessages()).flatMap((message) =>
+      message.renderedText ? [[message.itemId.toUpperCase(), message.renderedText] as const] : [],
+    ),
+  );
   let lastUpdateId = state.lastUpdateId;
   let processed = 0;
 
@@ -81,10 +87,13 @@ export async function processTelegramUpdates(
         });
         byId.set(item.id.toUpperCase(), updated);
       }
+      const template = templates.get(item.id.toUpperCase());
       await client.editMessageText(
         String(message.chat.id),
         message.message_id,
-        formatPriorityTask(updated),
+        template
+          ? renderStatus(template, taskCallback.status)
+          : `📌 <b>${escapeHtml(item.title)}</b>\n📊 <b>Andamento:</b> ${statusLabels[taskCallback.status]}`,
         buildTaskInlineKeyboard(updated),
       );
       await repository.upsertTelegramTaskMessage({
@@ -93,6 +102,7 @@ export async function processTelegramUpdates(
         messageId: message.message_id,
         lastRenderedStatus: taskCallback.status,
         updatedAt: now,
+        ...(template ? { renderedText: template } : {}),
       });
       await client
         .answerCallbackQuery(update.callback_query.id, 'Status atualizado.')
@@ -123,14 +133,14 @@ export async function processTelegramUpdates(
     const item = byId.get(action.itemId);
     if (!item) {
       await client.sendMessage(
-        `Não encontrei a tarefa ${action.itemId}. Ela pode ser antiga ou o código pode estar incompleto. Aguarde o próximo resumo e use os botões mostrados nele.`,
+        `Não encontrei a tarefa ${escapeHtml(action.itemId)}. Ela pode ser antiga ou o código pode estar incompleto. Aguarde o próximo resumo e use os botões mostrados nele.`,
       );
       continue;
     }
 
     if (action.kind === 'GET_STATUS') {
       await client.sendMessage(
-        `📌 ${item.title.replace(/\s+/g, ' ').trim()}\n📊 Seu andamento: ${statusLabels[item.status]}\n🆔 Código: ${item.id}`,
+        `📌 <b>${escapeHtml(item.title.replace(/\s+/g, ' ').trim())}</b>\n📅 ${escapeHtml(describeDate(item))}\n📊 Andamento: ${statusLabels[item.status]}\n<code>${item.id}</code>`,
       );
       processed += 1;
       continue;
@@ -154,6 +164,6 @@ export async function processTelegramUpdates(
     processed += 1;
   }
 
-  await repository.setTelegramState({ lastUpdateId });
+  await repository.setTelegramState({ ...state, lastUpdateId });
   return processed;
 }

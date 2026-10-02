@@ -1,6 +1,5 @@
-import { buildAcademicPrompt } from './prompt.js';
-import { parseAcademicAnalysis, parseJsonObject } from './schema.js';
-import type { AcademicAnalysis, AcademicAnalysisRequest, AiProvider } from './types.js';
+import { parseJsonObject } from './schema.js';
+import type { AiProvider } from './types.js';
 
 interface OpenAiResponse {
   output_text?: string;
@@ -16,7 +15,7 @@ export class OpenAiProvider implements AiProvider {
     private readonly model: string,
   ) {}
 
-  async analyze(request: AcademicAnalysisRequest): Promise<AcademicAnalysis> {
+  async generateJson(prompt: string): Promise<unknown> {
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -25,7 +24,7 @@ export class OpenAiProvider implements AiProvider {
       },
       body: JSON.stringify({
         model: this.model,
-        input: buildAcademicPrompt(request),
+        input: prompt,
         max_output_tokens: 1_500,
         text: { format: { type: 'json_object' } },
       }),
@@ -41,6 +40,6 @@ export class OpenAiProvider implements AiProvider {
       payload.output_text ??
       payload.output?.flatMap((entry) => entry.content ?? []).find((entry) => entry.text)?.text;
     if (!text) throw new Error('OpenAI não retornou conteúdo analisável.');
-    return parseAcademicAnalysis(parseJsonObject(text));
+    return parseJsonObject(text);
   }
 }

@@ -1,6 +1,5 @@
-import { buildAcademicPrompt } from './prompt.js';
-import { parseAcademicAnalysis, parseJsonObject } from './schema.js';
-import type { AcademicAnalysis, AcademicAnalysisRequest, AiProvider } from './types.js';
+import { parseJsonObject } from './schema.js';
+import type { AiProvider } from './types.js';
 
 interface GeminiResponse {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -8,7 +7,7 @@ interface GeminiResponse {
 }
 
 export interface GeminiRequestPolicy {
-  /** Intervalo mínimo entre requisições; o plano gratuito aceita 15 por minuto. */
+  /** Intervalo mÃ­nimo entre requisiÃ§Ãµes; o plano gratuito aceita 15 por minuto. */
   minIntervalMs: number;
   /** Novas tentativas para HTTP 429/5xx antes de desistir do item. */
   maxRetries: number;
@@ -43,9 +42,9 @@ export class GeminiAiProvider implements AiProvider {
     private readonly policy: GeminiRequestPolicy = defaultPolicy,
   ) {}
 
-  async analyze(request: AcademicAnalysisRequest): Promise<AcademicAnalysis> {
+  async generateJson(prompt: string): Promise<unknown> {
     const body = JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: buildAcademicPrompt(request) }] }],
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.1,
         maxOutputTokens: 1_500,
@@ -68,8 +67,8 @@ export class GeminiAiProvider implements AiProvider {
         const text = payload.candidates?.[0]?.content?.parts
           ?.map((part) => part.text ?? '')
           .join('');
-        if (!text) throw new Error('Gemini não retornou conteúdo analisável.');
-        return parseAcademicAnalysis(parseJsonObject(text));
+        if (!text) throw new Error('Gemini nÃ£o retornou conteÃºdo analisÃ¡vel.');
+        return parseJsonObject(text);
       }
       if (!retryableStatuses.has(response.status) || attempt >= this.policy.maxRetries) {
         throw new Error(

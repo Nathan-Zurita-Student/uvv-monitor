@@ -13,4 +13,6 @@ export interface RunHistory {
 
 export interface TelegramState {
   lastUpdateId: number;
+  /** Mensagem do painel fixada no chat, desafixada quando um painel novo chega. */
+  panelMessageId?: number;
 }

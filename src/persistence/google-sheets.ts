@@ -45,7 +45,7 @@ const tables = {
     'itemsFound',
     'errors',
   ],
-  telegram_state: ['lastUpdateId'],
+  telegram_state: ['lastUpdateId', 'panelMessageId'],
   telegram_task_messages: [
     'itemId',
     'chatId',
@@ -53,6 +53,7 @@ const tables = {
     'lastRenderedStatus',
     'updatedAt',
     'actionToken',
+    'renderedText',
   ],
 } as const;
 
@@ -235,6 +236,7 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
         lastRenderedStatus: (row[3] ?? 'TODO') as ItemStatus,
         updatedAt: row[4] ?? '',
         ...(row[5] ? { actionToken: row[5] } : {}),
+        ...(row[6] ? { renderedText: row[6] } : {}),
       }));
   }
 
@@ -247,6 +249,7 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
         message.lastRenderedStatus,
         message.updatedAt,
         message.actionToken ?? '',
+        message.renderedText ?? '',
       ],
     ]);
   }
@@ -276,15 +279,23 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
 
   async getTelegramState(): Promise<TelegramState> {
     const rows = await this.rows('telegram_state');
-    return { lastUpdateId: Number(rows[0]?.[0] ?? 0) };
+    const panelMessageId = Number(rows[0]?.[1] ?? 0);
+    return {
+      lastUpdateId: Number(rows[0]?.[0] ?? 0),
+      ...(panelMessageId > 0 ? { panelMessageId } : {}),
+    };
   }
 
   async setTelegramState(state: TelegramState): Promise<void> {
     await this.sheets.spreadsheets.values.update({
       spreadsheetId: this.spreadsheetId,
-      range: "'telegram_state'!A2",
+      range: "'telegram_state'!A2:B2",
       valueInputOption: 'RAW',
-      requestBody: { values: [[String(state.lastUpdateId)]] },
+      requestBody: {
+        values: [
+          [String(state.lastUpdateId), state.panelMessageId ? String(state.panelMessageId) : ''],
+        ],
+      },
     });
   }
 }

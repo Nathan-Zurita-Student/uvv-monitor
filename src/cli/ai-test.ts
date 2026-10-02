@@ -1,4 +1,4 @@
-import { createAiProvider } from '../ai/service.js';
+import { analyzeItem, createAiProvider, verifiedDueDate } from '../ai/service.js';
 import { loadConfig } from '../config/env.js';
 import type { AcademicItem } from '../models/academic-item.js';
 
@@ -14,19 +14,21 @@ const testItem: AcademicItem = {
   discipline: 'Disciplina de teste',
   title: 'Prova de teste',
   description:
-    'A prova será em 05/10/2026. Estudar unidades 1 a 4 e revisar a lista de exercícios 2. O horário e o peso não foram informados.',
-  type: 'EXAM',
-  officialDate: '2026-10-05',
+    'A prova será no dia 05/10/2026. Estudar unidades 1 a 4 e revisar a lista de exercícios 2. O horário e o peso não foram informados.',
+  type: 'NOTICE',
   firstSeenAt: new Date().toISOString(),
   lastSeenAt: new Date().toISOString(),
   contentHash: 'teste',
   status: 'TODO',
-  urgency: 'THIS_WEEK',
+  urgency: 'INFORMATIONAL',
 };
 
-const result = await provider.analyze({
+const result = await analyzeItem(provider, {
   item: testItem,
   maxInputCharacters: config.AI_MAX_INPUT_CHARS,
 });
 console.log(`Provedor: ${provider.name}`);
 console.log(JSON.stringify(result, null, 2));
+console.log(
+  `Data aceita após verificação: ${verifiedDueDate(result, testItem)?.date ?? 'nenhuma'}`,
+);

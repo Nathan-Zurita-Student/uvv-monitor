@@ -1,3 +1,4 @@
+import { effectiveType, isAiIrrelevant } from '../agenda/focus.js';
 import type { AcademicItem } from '../models/academic-item.js';
 import { normalizeText, stableStringify } from '../utils/normalize.js';
 import type { CalendarEventDate, CalendarEventInput, CalendarGateway } from './types.js';
@@ -25,6 +26,8 @@ const calendarItemTypes = new Set<AcademicItem['type']>([
 export function isCalendarSyncCandidate(item: AcademicItem): boolean {
   return (
     calendarItemTypes.has(item.type) &&
+    calendarItemTypes.has(effectiveType(item)) &&
+    !isAiIrrelevant(item) &&
     !['DONE', 'IGNORED', 'NEEDS_CONFIRMATION'].includes(item.status) &&
     !['OVERDUE', 'INFORMATIONAL'].includes(item.urgency) &&
     item.metadata?.contextOnly !== 'true' &&

@@ -5,6 +5,7 @@ import {
   requirePortalCredentials,
   requireTelegramCredentials,
 } from '../config/env.js';
+import { buildAgenda } from '../agenda/agenda.js';
 import { GoogleCalendarGateway } from '../calendar/google-gateway.js';
 import { isCalendarSyncCandidate, syncCalendarEvent } from '../calendar/service.js';
 import { GmailGoogleGateway } from '../gmail/google-gateway.js';
@@ -18,19 +19,14 @@ import { collectPortalSafely } from '../portal/safe-collector.js';
 import { prioritizeItems } from '../prioritization/priority.js';
 import { verificationWindow, type DailySlot, isWeeklyReviewRun } from './windows.js';
 import { TelegramClient } from '../telegram/client.js';
-import {
-  format72HourSummary,
-  formatCompleteTaskSummary,
-  formatNovelty,
-  formatPriorityTask,
-  formatPriorityTaskHeader,
-  formatWeeklyReview,
-} from '../telegram/format.js';
+import { formatBootstrap } from '../telegram/format.js';
+import { escapeHtml } from '../telegram/html.js';
+import { deliverNotifications, type Novelty } from '../telegram/notifier.js';
 import { processTelegramUpdates } from '../telegram/processor.js';
-import { buildTaskInlineKeyboard, isTrackableTask } from '../telegram/task-actions.js';
 import { logger } from '../utils/logger.js';
 import { collectMoodleCalendar } from '../moodle/calendar-feed.js';
 import { createAiProvider, enrichItemsWithAi } from '../ai/service.js';
+import type { AiProvider } from '../ai/types.js';
 
 export async function runMonitor(
   config: AppConfig,
@@ -120,33 +116,29 @@ export async function runMonitor(
     ...diff.changedItems.map(({ item }) => item),
     ...diff.unchangedItems,
   ];
-  const prioritized = prioritizeItems(touched, now);
-  const prioritizedById = new Map(prioritized.map((item) => [item.id, item]));
-  const meaningfulChangedItems = diff.changedItems
-    .filter(({ item, changes }) => {
-      if (changes.length === 0) return false;
-      const enrichmentOnly = changes.every(({ field }) =>
-        ['description', 'discipline'].includes(field),
-      );
-      const previousDescription = changes.find(({ field }) => field === 'description')?.before;
-      return !(enrichmentOnly && previousDescription === item.metadata?.originalTitle);
-    })
-    .map(({ item }) => item);
-  const changedNowBeforeAi = [...diff.newItems, ...meaningfulChangedItems].flatMap((item) => {
-    const prioritizedItem = prioritizedById.get(item.id);
-    return prioritizedItem ? [prioritizedItem] : [];
+  let prioritized = prioritizeItems(touched, now);
+  const meaningfulChanges = diff.changedItems.filter(({ item, changes }) => {
+    if (changes.length === 0) return false;
+    const enrichmentOnly = changes.every(({ field }) =>
+      ['description', 'discipline'].includes(field),
+    );
+    const previousDescription = changes.find(({ field }) => field === 'description')?.before;
+    return !(enrichmentOnly && previousDescription === item.metadata?.originalTitle);
   });
-  let changedNow = changedNowBeforeAi;
+  const noveltyIds = new Set(
+    [...diff.newItems, ...meaningfulChanges.map(({ item }) => item)].map((item) => item.id),
+  );
+
+  let aiProvider: AiProvider | undefined;
   try {
-    const ai = await enrichItemsWithAi(prioritized, createAiProvider(config), {
+    aiProvider = createAiProvider(config);
+    const ai = await enrichItemsWithAi(prioritized, aiProvider, {
       maxCalls: config.AI_MAX_CALLS_PER_RUN,
       maxInputCharacters: config.AI_MAX_INPUT_CHARS,
+      priorityIds: noveltyIds,
+      now,
     });
-    const enrichedById = new Map(ai.items.map((item) => [item.id, item]));
-    for (const [index, item] of prioritized.entries()) {
-      prioritized[index] = enrichedById.get(item.id) ?? item;
-    }
-    changedNow = changedNowBeforeAi.map((item) => enrichedById.get(item.id) ?? item);
+    prioritized = ai.items;
     if (ai.errors.length > 0) run.errors.push(...ai.errors.map((error) => `IA: ${error}`));
     logger.info(
       { module: 'AI', calls: ai.calls, errors: ai.errors.length },
@@ -181,67 +173,63 @@ export async function runMonitor(
 
   try {
     if (run.portalStatus === 'FAILED' || run.portalStatus === 'NOT_VERIFIED') {
-      await telegram.sendMessage('Portal/AVA não verificado nesta execução.');
+      await telegram.sendMessage(
+        '⚠️ <b>Portal UVV não verificado nesta execução.</b>\nGmail e Calendar continuaram sendo verificados normalmente.',
+      );
     }
     const eadError = run.errors.find((error) => error.startsWith('Portal AVA/EAD:'));
     if (eadError) {
       await telegram.sendMessage(
-        `⚠️ Ambiente Virtual (EAD) não verificado nesta execução.\n\nO Portal UVV não conseguiu gerar o acesso automático aos cursos online. ${eadError.replace('Portal AVA/EAD: ', '')}\n\nAs páginas presenciais, o Gmail e o Calendar continuaram sendo verificados normalmente.`,
+        `⚠️ <b>Ambiente Virtual (EAD) não verificado nesta execução.</b>\n\nO Portal UVV não conseguiu gerar o acesso automático aos cursos online. ${escapeHtml(eadError.replace('Portal AVA/EAD: ', ''))}\n\nAs páginas presenciais, o Gmail e o Calendar continuaram sendo verificados normalmente.`,
       );
     }
-    if (isBootstrap) {
-      await telegram.sendMessage(
-        `Tudo pronto! Fiz a primeira leitura do Portal, Gmail e Calendar.\n\nEncontrei ${String(candidates.length)} registros acadêmicos. Guardei os comunicados antigos no histórico, mas não vou tratá-los como novidades nem encher seu Telegram com alertas retroativos. A seguir, mostrarei somente o que realmente merece sua atenção.`,
-      );
-    } else {
-      for (const item of changedNow) {
-        if (item.metadata?.contextOnly !== 'true') {
-          await telegram.sendMessage(formatNovelty(item));
-        }
-      }
-    }
-    const allTasks = allItems.filter(isTrackableTask);
-    const visibleTasks = allTasks.slice(0, 3);
-    for (const summary of formatCompleteTaskSummary(allTasks)) {
-      await telegram.sendMessage(summary);
-    }
-    if (visibleTasks.length > 0) {
-      await telegram.sendMessage(formatPriorityTaskHeader(visibleTasks.length, allTasks.length));
-    }
-    for (const item of visibleTasks) {
-      const actionToken = randomUUID();
-      const message = await telegram.sendMessage(
-        formatPriorityTask(item),
-        config.TELEGRAM_ACTIONS_WEB_APP_URL
-          ? {
-              inlineKeyboard: buildTaskInlineKeyboard(item, {
-                actionBaseUrl: config.TELEGRAM_ACTIONS_WEB_APP_URL,
-                actionToken,
-              }),
-            }
-          : {},
-      );
-      await repository.upsertTelegramTaskMessage({
-        itemId: item.id,
-        chatId: telegramCredentials.chatId,
-        messageId: message.message_id,
-        lastRenderedStatus: item.status,
-        updatedAt: now.toISOString(),
-        actionToken,
-      });
-    }
-    if (slot === '21:00') {
-      const summary = format72HourSummary(allItems);
-      if (summary) await telegram.sendMessage(summary);
-      if (isWeeklyReviewRun(now, slot)) await telegram.sendMessage(formatWeeklyReview(allItems));
-      logger.info(
-        { module: 'Scheduler', weekly: isWeeklyReviewRun(now, slot) },
-        'Resumo das 21h processado',
-      );
-    }
+    if (isBootstrap) await telegram.sendMessage(formatBootstrap(candidates.length));
   } catch (error) {
     run.errors.push(`Telegram envio: ${error instanceof Error ? error.message : 'erro'}`);
   }
+
+  const latestById = new Map(allItems.map((item) => [item.id, item]));
+  const novelties: Novelty[] = isBootstrap
+    ? []
+    : [
+        ...diff.newItems.map((item) => ({
+          item: latestById.get(item.id) ?? item,
+          isNew: true,
+          changes: [],
+        })),
+        ...meaningfulChanges.map(({ item, changes }) => ({
+          item: latestById.get(item.id) ?? item,
+          isNew: false,
+          changes,
+        })),
+      ];
+  const agenda = buildAgenda(allItems, now);
+  run.errors.push(
+    ...(await deliverNotifications({
+      telegram,
+      repository,
+      chatId: telegramCredentials.chatId,
+      slot,
+      agenda,
+      novelties,
+      weekly: isWeeklyReviewRun(now, slot),
+      ...(config.TELEGRAM_ACTIONS_WEB_APP_URL
+        ? { actionBaseUrl: config.TELEGRAM_ACTIONS_WEB_APP_URL }
+        : {}),
+      ...(aiProvider ? { aiProvider } : {}),
+    })),
+  );
+  logger.info(
+    {
+      module: 'Telegram',
+      slot,
+      novelties: novelties.length,
+      exams: agenda.exams.length,
+      tasks: agenda.tasks.length,
+      overdue: agenda.overdue.length,
+    },
+    'Notificações processadas',
+  );
 
   run.finishedAt = new Date().toISOString();
   await repository.appendRunHistory(run);

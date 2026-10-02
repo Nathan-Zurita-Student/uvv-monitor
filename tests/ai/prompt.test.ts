@@ -33,9 +33,18 @@ describe('prompt acadêmico', () => {
     expect(prompt).not.toContain('aluno@example.com');
   });
 
-  it('informa os valores aceitos para tipo e certeza', () => {
-    const prompt = buildAcademicPrompt({ item, maxInputCharacters: 20_000 });
-    expect(prompt).toContain('suggestedType deve ser exatamente um destes valores: MESSAGE,');
-    expect(prompt).toContain('CONFIRMED, INFERRED, NOT_INFORMED');
+  it('informa os valores aceitos e a data de hoje para interpretar prazos', () => {
+    const prompt = buildAcademicPrompt({
+      item,
+      maxInputCharacters: 20_000,
+      now: new Date('2026-10-02T15:00:00Z'),
+    });
+    expect(prompt).toContain('suggestedType: exatamente um destes valores: MESSAGE,');
+    expect(prompt).toContain(
+      'certainty: exatamente um destes valores: CONFIRMED, INFERRED, NOT_INFORMED',
+    );
+    expect(prompt).toContain('ACTION_REQUIRED, INFORMATIVE, IRRELEVANT');
+    expect(prompt).toContain('Hoje é sexta-feira, 02/10 de 2026.');
+    expect(prompt).toContain('trecho copiado literalmente do texto');
   });
 });

@@ -1,4 +1,4 @@
-import type { AcademicItem, ItemStatus, ItemType } from '../models/academic-item.js';
+import type { AcademicItem, ItemStatus } from '../models/academic-item.js';
 import type { TelegramButton } from './client.js';
 
 export const taskCallbackStatuses = {
@@ -16,15 +16,6 @@ const callbackKeysByStatus: Partial<Record<ItemStatus, TaskCallbackStatus>> = {
   DONE: 'completed',
   WAITING: 'waiting',
 };
-
-const trackableTypes = new Set<ItemType>([
-  'EXAM',
-  'ASSIGNMENT',
-  'AOP',
-  'ACTIVITY',
-  'DOCUMENT',
-  'SERVICE_REQUEST',
-]);
 
 export interface ParsedTaskCallback {
   itemId: string;
@@ -51,14 +42,6 @@ export function parseTaskCallback(value: string): ParsedTaskCallback | undefined
     status: taskCallbackStatuses[callbackStatus],
     callbackStatus,
   };
-}
-
-export function isTrackableTask(item: AcademicItem): boolean {
-  return (
-    trackableTypes.has(item.type) &&
-    !['DONE', 'IGNORED'].includes(item.status) &&
-    item.metadata?.contextOnly !== 'true'
-  );
 }
 
 function buttonText(label: string, status: ItemStatus, selected: ItemStatus): string {

@@ -73,4 +73,6 @@ export interface TelegramTaskMessage {
   lastRenderedStatus: ItemStatus;
   updatedAt: string;
   actionToken?: string;
+  /** Texto HTML do cartão com {{STATUS}}; permite reeditar a mensagem mantendo o layout. */
+  renderedText?: string;
 }

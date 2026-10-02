@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { AcademicItem } from '../../src/models/academic-item.js';
 import {
   buildTaskInlineKeyboard,
-  isTrackableTask,
   parseTaskCallback,
   taskCallbackData,
 } from '../../src/telegram/task-actions.js';
@@ -67,11 +66,5 @@ describe('ações inline de tarefas', () => {
     expect(url.searchParams.get('item')).toBe('UVV-ABC123');
     expect(url.searchParams.get('status')).toBe('not_started');
     expect(url.searchParams.get('token')).toBe('token-unico-da-mensagem');
-  });
-
-  it('separa tarefa acompanhável de comunicado', () => {
-    expect(isTrackableTask(item())).toBe(true);
-    expect(isTrackableTask(item({ type: 'NOTICE' }))).toBe(false);
-    expect(isTrackableTask(item({ status: 'DONE' }))).toBe(false);
   });
 });
