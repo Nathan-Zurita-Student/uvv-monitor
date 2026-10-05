@@ -212,6 +212,11 @@ AI_MAX_INPUT_CHARS       # máximo de texto por item; padrão: 20000
 
 ## Interpretação opcional por IA
 
+A conversa livre pelo Telegram usa GPT separadamente, no webhook do Apps Script: entende pedidos
+de lembretes, cria compromissos pessoais na agenda e responde sobre as pendências. O custo é limitado
+a US$ 2,50 por mês e 30 pedidos por dia por padrão. Veja [configuração da conversa](apps-script/README.md#conversa-com-gpt).
+Isso não ativa revisão das análises automáticas por dois modelos; a coleta mantém o provedor escolhido.
+
 O monitor funciona integralmente sem IA. Quando `AI_ENABLED=true`, itens novos ou alterados são
 transformados em uma explicação simples contendo o que fazer, o que estudar, materiais mencionados
 e informações que ainda precisam de confirmação. A IA nunca substitui datas oficiais, status,

@@ -27,6 +27,7 @@ declare const UrlFetchApp: {
       contentType?: string;
       payload?: string;
       muteHttpExceptions?: boolean;
+      headers?: Record<string, string>;
     },
   ): { getResponseCode(): number; getContentText(): string };
 };
@@ -68,6 +69,8 @@ declare const PropertiesService: {
   getScriptProperties(): {
     getProperty(key: string): string | null;
     getProperties(): Record<string, string | undefined>;
+    setProperty(key: string, value: string): unknown;
+    deleteProperty(key: string): unknown;
   };
 };
 

@@ -66,6 +66,18 @@ export const tables = {
   reminders: ['itemId', 'remindAt', 'createdAt', 'sentAt', 'chatId'],
   notification_log: ['itemId', 'signature', 'level', 'lastNotifiedAt'],
   telegram_batches: ['batchId', 'createdAt', 'entries'],
+  conversation_operations: ['updateId', 'state', 'plan', 'reply', 'createdAt'],
+  personal_reminders: [
+    'id',
+    'title',
+    'description',
+    'remindAt',
+    'urgent',
+    'chatId',
+    'itemId',
+    'calendarEventId',
+    'sentAt',
+  ],
 } as const;
 
 export type TableName = keyof typeof tables;

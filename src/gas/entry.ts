@@ -24,6 +24,14 @@ import {
   type TableName,
 } from '../persistence/rows.js';
 import type { TelegramUpdate } from '../telegram/types.js';
+import {
+  conversationInfo,
+  handleConversation,
+  markConversationSent,
+  sendPersonalReminders,
+} from './conversation.js';
+import { escapeHtml } from '../telegram/html.js';
+import { configureConversation } from './configuration.js';
 
 interface BotProperties {
   botToken: string;
@@ -400,22 +408,73 @@ export function doPost(event: {
       return HtmlService.createHtmlOutput('unauthorized');
     const update = JSON.parse(event.postData?.contents ?? '{}') as TelegramUpdate & {
       uvv?: string;
+      configuration?: unknown;
     };
+    if (update.uvv === 'configure_chat') {
+      return withLock(() =>
+        HtmlService.createHtmlOutput(configureConversation(update.configuration)),
+      );
+    }
     if (update.uvv === 'refresh') {
       withLock(() => buildSnapshot(props));
       return ok;
     }
+    const incomingChat = update.message?.chat.id ?? update.callback_query?.message?.chat.id;
+    if (
+      String(incomingChat ?? '') !== props.chatId ||
+      !Number.isSafeInteger(update.update_id) ||
+      update.update_id < 0
+    )
+      return ok;
     const cache = CacheService.getScriptCache();
     const seenKey = `update:${String(update.update_id)}`;
     if (cache.get(seenKey)) return ok;
-    cache.put(seenKey, '1', 21_600);
     // Responde o toque antes de carregar os dados: o botão para de "carregar" na hora.
     const quick = quickAnswer(update, props.chatId);
     if (quick) sendEffects([quick], props);
     withLock(() => {
+      if (cache.get(seenKey)) return;
       const now = new Date();
       const pending = readPending(props.chatId);
       const snapshot = loadSnapshot(props, referencedData(update, pending));
+      const text = update.message?.text?.trim();
+      const chatCommand = /^\/(?:gastos|esquecer|cancelar)(?:@\w+)?$/i.test(text ?? '');
+      if (text && (chatCommand || (!text.startsWith('/') && !pending))) {
+        const store = new SheetStore(SpreadsheetApp.openById(props.sheetId));
+        try {
+          const result = handleConversation({
+            text,
+            updateId: update.update_id,
+            chatId: props.chatId,
+            items: renderContext(snapshot, now).items,
+            now,
+            store,
+            ...(update.message?.reply_to_message?.text
+              ? { replyContext: update.message.reply_to_message.text }
+              : {}),
+          });
+          if (!result.replay) {
+            telegram(props.botToken, 'sendMessage', {
+              chat_id: props.chatId,
+              text: escapeHtml(result.reply),
+              parse_mode: 'HTML',
+            });
+            markConversationSent(store, update.update_id);
+          }
+          if (/^\/(?:esquecer|cancelar)/i.test(text)) cache.remove(pendingKey(props.chatId));
+          buildSnapshot(props);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : 'Não consegui atender esse pedido agora.';
+          telegram(props.botToken, 'sendMessage', {
+            chat_id: props.chatId,
+            text: escapeHtml(message),
+            parse_mode: 'HTML',
+          });
+        }
+        cache.put(seenKey, '1', 21_600);
+        return;
+      }
       const effects = handleUpdate(
         update,
         {
@@ -428,6 +487,7 @@ export function doPost(event: {
       );
       // A mensagem é redesenhada primeiro; a planilha é gravada em seguida.
       persist(sendEffects(effects, props), snapshot, props);
+      cache.put(seenKey, '1', 21_600);
     });
   } catch (error) {
     console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
@@ -440,6 +500,20 @@ export function processReminders(): void {
   const props = properties();
   withLock(() => {
     const now = new Date();
+    const store = new SheetStore(SpreadsheetApp.openById(props.sheetId));
+    const snapshotForPersonal = loadSnapshot(props);
+    sendPersonalReminders(
+      store,
+      props.chatId,
+      renderContext(snapshotForPersonal, now).items,
+      now,
+      (text) =>
+        telegram(props.botToken, 'sendMessage', {
+          chat_id: props.chatId,
+          text,
+          parse_mode: 'HTML',
+        }),
+    );
     const state = readState();
     const fresh = state && now.getTime() - Date.parse(state.builtAt) <= MAX_SNAPSHOT_AGE_MS;
     // Sem cópia recente, relê a planilha: isso também deixa o cache pronto para os botões.
@@ -456,6 +530,8 @@ export function processReminders(): void {
     );
   });
 }
+
+export { conversationInfo };
 
 /** Relê a planilha e renova a cópia em cache; devolve um resumo para conferência no editor. */
 export function refreshCache(): string {

@@ -54,6 +54,13 @@ function refreshCache() {
   return result;
 }
 
+/** Diagnóstico da conversa GPT sem revelar a chave nem consumir créditos. */
+function conversationInfo() {
+  const result = UVVBot.conversationInfo();
+  console.log(result);
+  return result;
+}
+
 function webhookInfo() {
   const result = UVVBot.webhookInfo();
   console.log(result);

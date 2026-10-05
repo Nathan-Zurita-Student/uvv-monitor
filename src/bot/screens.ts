@@ -669,5 +669,8 @@ export function helpText(): string {
     '',
     '• /painel mostra suas provas e atividades',
     '• Nos avisos, use os botões pra concluir, lembrar depois ou ignorar',
+    '• Pode conversar comigo: “me lembra de revisar a prova amanhã às 14h”',
+    '• Peça “coloca na minha agenda” para criar também no Google Calendar',
+    '• /gastos mostra o consumo do GPT; /esquecer limpa o contexto da conversa',
   ].join('\n');
 }

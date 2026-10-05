@@ -66,3 +66,47 @@ Use `webhookInfo` para conferir a situação (`pending_update_count`, `last_erro
 `deleteWebhook` volta ao modo de reserva, em que o GitHub Actions lê os cliques por `getUpdates`.
 
 Nunca coloque os valores das propriedades no repositório.
+
+## Conversa com GPT
+
+O webhook atende mensagens livres com `gpt-5.4-mini`, usando as atividades da planilha e as
+últimas três trocas da conversa (expiram após 48 horas). O Gemini continua nas análises automáticas
+do monitor. Exemplos:
+
+- “O que eu preciso fazer essa semana?”
+- “Marca na minha agenda dia nove deste mês, às 14h, como urgente, para revisar capítulos 1 e 2.”
+- “Me lembra de resolver essa atividade amanhã às 9h.”
+- “Já terminei a atividade UVV-ABC123, marca como concluída.”
+
+Quando faltar assunto, data ou horário, o bot pergunta. Lembretes solicitados para a agenda viram
+eventos pessoais no Google Calendar (30 minutos por padrão), com descrição do que fazer e destaque
+vermelho quando urgentes. Todo lembrete também envia uma mensagem no Telegram pelo acionador
+`processReminders` (até 5 minutos após o horário). Uma entrega repetida do mesmo update não cria
+outro evento. O bot confirma apenas depois de gravar o evento e o lembrete.
+
+Depois de publicar a nova versão de `Bot.gs` e `Code.gs`, execute no GitHub Actions o workflow
+**Configurar conversa do Telegram**. Ele sincroniza a autorização Google já existente e, se
+cadastrada, a chave `OPENAI_API_KEY`, pelo webhook autenticado. Não imprime os valores. Não exige
+novos escopos no Apps Script. Se a chave ainda não existir, cadastre o secret `OPENAI_API_KEY` no
+GitHub e rode esse workflow novamente, ou adicione a propriedade diretamente no Apps Script.
+
+Propriedades opcionais no Apps Script:
+
+| Propriedade                   | Padrão | Efeito                                  |
+| ----------------------------- | ------ | --------------------------------------- |
+| `GPT_CHAT_ENABLED`            | `true` | `false` pausa só a conversa GPT         |
+| `GPT_CHAT_MONTHLY_BUDGET_USD` | `2.5`  | Teto mensal de gasto do bot, em dólares |
+| `GPT_CHAT_MAX_CALLS_PER_DAY`  | `30`   | Máximo de pedidos ao GPT por dia local  |
+
+`/gastos` mostra o consumo estimado/medido do bot, sem consultar o saldo da OpenAI. O bot reserva
+um teto conservador antes de cada chamada e ajusta pelo consumo retornado; falhas sem informação
+de consumo mantêm a reserva. Ao atingir um limite, comandos, botões e lembretes continuam ativos.
+`/esquecer` apaga a memória da conversa; `/cancelar` também encerra a escolha de horário pendente.
+Esses comandos não consomem tokens nem apagam lembretes já criados.
+
+Execute `conversationInfo` no editor para conferir chave presente, modelo e orçamento sem expor
+credenciais ou gastar créditos. As abas `personal_reminders` e `conversation_operations` são
+criadas automaticamente. O GPT propõe apenas responder, criar lembrete ou mudar status; não recebe
+acesso para apagar eventos, mudar prazos oficiais ou enviar mensagens a terceiros. Mensagens de
+outros chats são recusadas antes de consultar a IA. A conversa imediata requer o webhook: o modo
+de reserva `getUpdates` continua atendendo os comandos tradicionais.
