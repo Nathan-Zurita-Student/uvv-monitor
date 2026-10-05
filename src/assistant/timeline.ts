@@ -134,6 +134,19 @@ export function buildTimeline(input: TimelineInput): TimelineEntry[] {
       twin.timelineEntry.notes = notes;
       continue;
     }
+    // Evento de poucos minutos é um aviso que a pessoa marcou, não um compromisso.
+    if (!event.allDay && event.end.getTime() - event.start.getTime() <= 15 * 60_000) {
+      result.push({
+        id: event.id,
+        date: inRange(date) ? date : from,
+        start: localTime(event.start),
+        title: event.title,
+        kind: 'lembrete',
+        source: 'agenda',
+        notes: ['evento curto da sua Agenda, funciona como lembrete'],
+      });
+      continue;
+    }
     const study = event.createdByAssistant && /📚|estud|revis/i.test(event.title);
     result.push({
       id: event.id,

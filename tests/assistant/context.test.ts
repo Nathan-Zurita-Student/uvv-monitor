@@ -192,6 +192,26 @@ describe('linha do tempo sem duplicatas', () => {
     expect(timeline[0]?.end).toBeUndefined();
     expect(busyIntervals(timeline)).toHaveLength(0);
   });
+
+  it('trata evento de poucos minutos da Agenda como lembrete', () => {
+    const timeline = buildTimeline({
+      from: '2026-10-05',
+      to: '2026-10-05',
+      now,
+      agenda: buildAgenda([], now),
+      events: [
+        event({
+          id: 'curto',
+          title: '🔴 URGENTE — AOP 03',
+          start: at('2026-10-05', '12:00'),
+          end: at('2026-10-05', '12:10'),
+        }),
+      ],
+    });
+    expect(
+      timeline.map((entry) => `${entry.kind}:${entry.start ?? '-'}:${entry.end ?? '-'}`),
+    ).toEqual(['lembrete:12:00:-']);
+  });
 });
 
 describe('prioridades e alertas', () => {
