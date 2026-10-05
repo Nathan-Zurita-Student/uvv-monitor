@@ -75,6 +75,10 @@ beforeEach(() => {
     }),
   });
   vi.stubGlobal('HtmlService', { createHtmlOutput: (text: string) => text });
+  vi.stubGlobal('ContentService', {
+    MimeType: { JSON: 'json' },
+    createTextOutput: (text: string) => ({ setMimeType: () => text }),
+  });
   vi.stubGlobal('LockService', {
     getScriptLock: () => ({ waitLock: () => undefined, releaseLock: () => undefined }),
   });

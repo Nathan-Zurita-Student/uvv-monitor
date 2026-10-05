@@ -76,4 +76,9 @@ declare const PropertiesService: {
 
 declare const HtmlService: { createHtmlOutput(html: string): unknown };
 
+declare const ContentService: {
+  MimeType: { JSON: string };
+  createTextOutput(text: string): { setMimeType(type: string): unknown };
+};
+
 declare const ScriptApp: { getService(): { getUrl(): string } };

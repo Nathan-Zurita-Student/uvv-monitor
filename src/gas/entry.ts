@@ -412,7 +412,9 @@ export function doPost(event: {
     };
     if (update.uvv === 'configure_chat') {
       return withLock(() =>
-        HtmlService.createHtmlOutput(configureConversation(update.configuration)),
+        ContentService.createTextOutput(configureConversation(update.configuration)).setMimeType(
+          ContentService.MimeType.JSON,
+        ),
       );
     }
     if (update.uvv === 'refresh') {
