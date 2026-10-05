@@ -48,6 +48,9 @@ export interface CalendarEvent {
   /** Criado pelo assistente (bloco de estudo, compromisso pedido no Telegram). */
   createdByAssistant?: boolean;
   recurring?: boolean;
+  /** Lembrete pessoal que a conversa antiga do Telegram marcou na Agenda (evento curto). */
+  telegramReminder?: boolean;
+  urgent?: boolean;
 }
 
 export interface CalendarEventInput {

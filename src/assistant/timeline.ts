@@ -95,6 +95,21 @@ export function buildTimeline(input: TimelineInput): TimelineEntry[] {
       continue;
     // Eventos que o monitor sincronizou já estão representados pelo item acadêmico.
     if (event.academicItemId) continue;
+    // Lembretes que a conversa antiga marcou na Agenda: um aviso num horário, não um compromisso.
+    if (event.telegramReminder && !event.allDay) {
+      result.push({
+        id: event.id,
+        date: inRange(date) ? date : from,
+        start: localTime(event.start),
+        title: event.title,
+        kind: 'lembrete',
+        source: 'agenda',
+        notes: [
+          `lembrete${event.urgent ? ' urgente' : ''} que você marcou na Agenda pelo Telegram`,
+        ],
+      });
+      continue;
+    }
     const twin = academicTimeline.find(
       ({ entry, timelineEntry }) =>
         timelineEntry.date === date &&

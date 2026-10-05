@@ -8,7 +8,7 @@ declare namespace GasSheets {
   interface Sheet {
     getDataRange(): Range;
     getRange(row: number, column: number, rows: number, columns: number): Range;
-    appendRow(values: string[]): Sheet;
+    appendRow(values: (string | number)[]): Sheet;
     getLastRow(): number;
     deleteRow(row: number): Sheet;
   }

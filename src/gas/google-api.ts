@@ -99,6 +99,9 @@ interface RawEvent {
   extendedProperties?: { private?: Record<string, string> };
 }
 
+/** Prefixo que a conversa antiga do Telegram colocava nos lembretes urgentes. */
+const URGENT_PREFIX = /^🔴\s*URGENTE\s*[—–-]\s*/u;
+
 function eventFromApi(raw: RawEvent): CalendarEvent | undefined {
   if (!raw.id || raw.status === 'cancelled' || !raw.start || !raw.end) return undefined;
   const allDay = Boolean(raw.start.date && !raw.start.dateTime);
@@ -108,9 +111,14 @@ function eventFromApi(raw: RawEvent): CalendarEvent | undefined {
   const end = raw.end.dateTime ? new Date(raw.end.dateTime) : zonedInstant(raw.end.date ?? '');
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return undefined;
   const props = raw.extendedProperties?.private ?? {};
+  const title = raw.summary?.trim() || '(sem título)';
+  const telegramReminder =
+    Boolean(props.uvvTelegramUpdate) ||
+    /Lembrete pessoal solicitado no Telegram/i.test(raw.description ?? '');
+  const urgent = URGENT_PREFIX.test(title);
   return {
     id: raw.id,
-    title: raw.summary?.trim() || '(sem título)',
+    title: telegramReminder ? title.replace(URGENT_PREFIX, '') || title : title,
     start,
     end,
     allDay,
@@ -119,6 +127,7 @@ function eventFromApi(raw: RawEvent): CalendarEvent | undefined {
     ...(props.uvvItemId ? { academicItemId: props.uvvItemId } : {}),
     ...(props.uvvAssistant ? { createdByAssistant: true } : {}),
     ...(raw.recurringEventId ? { recurring: true } : {}),
+    ...(telegramReminder ? { telegramReminder: true, ...(urgent ? { urgent: true } : {}) } : {}),
   };
 }
 

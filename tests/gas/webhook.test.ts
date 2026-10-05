@@ -7,6 +7,8 @@ import { exam, item } from '../bot/fixtures.js';
 let props: Map<string, string>;
 let cache: Map<string, string>;
 let sheets: Map<string, string[][]>;
+/** Linhas como chegaram ao appendRow, antes de virar texto no armazenamento falso. */
+let appended: Array<{ name: string; row: Array<string | number> }>;
 let telegramCalls: Array<{ method: string; payload: Record<string, unknown> }>;
 let requests: Array<{ method: string; url: string; body?: string }>;
 let openAiReplies: unknown[];
@@ -18,8 +20,9 @@ function sheet(name: string) {
   return {
     getDataRange: () => ({ getValues: () => sheets.get(name) ?? [] }),
     getLastRow: () => sheets.get(name)?.length ?? 0,
-    appendRow: (row: string[]) => {
-      sheets.set(name, [...(sheets.get(name) ?? []), row]);
+    appendRow: (row: Array<string | number>) => {
+      appended.push({ name, row });
+      sheets.set(name, [...(sheets.get(name) ?? []), row.map(String)]);
     },
     deleteRow: (row: number) => {
       sheets.get(name)?.splice(row - 1, 1);
@@ -113,6 +116,7 @@ beforeEach(() => {
   ]);
   cache = new Map();
   sheets = new Map(Object.entries(tables).map(([name, headers]) => [name, [Array.from(headers)]]));
+  appended = [];
   sheets.get('detected_items')!.push(academicItemToRow(item({ id: 'UVV-123' })));
   telegramCalls = [];
   requests = [];
@@ -242,6 +246,9 @@ describe('assistente no webhook', () => {
     expect(log?.[3]).toBe('["create_reminder"]');
     expect(log?.[11]).toBe('ok');
     expect(Number(log?.[9])).toBeGreaterThan(0);
+    // Custo vai como número: em texto, a planilha pt-BR leria "0.0047" como 47.
+    const rawLog = appended.find((entry) => entry.name === 'assistant_log')?.row;
+    expect(typeof rawLog?.[9]).toBe('number');
     expect(JSON.stringify(sheets.get('assistant_log'))).not.toContain('test-openai');
 
     // Reentrega do mesmo update: nada é refeito.

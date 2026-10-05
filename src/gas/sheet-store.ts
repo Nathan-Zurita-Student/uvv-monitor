@@ -46,8 +46,11 @@ export class SheetStore {
     else sheet.appendRow(row);
   }
 
-  /** Acrescenta sem procurar a chave (registros de log). */
-  append(name: TableName, row: string[]): void {
+  /**
+   * Acrescenta sem procurar a chave (registros de log). Números vão como número: em texto, a
+   * planilha em pt-BR leria "0.0047" como 47 (ponto é separador de milhar).
+   */
+  append(name: TableName, row: (string | number)[]): void {
     this.sheet(name).appendRow(row);
   }
 

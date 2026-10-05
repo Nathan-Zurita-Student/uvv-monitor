@@ -164,6 +164,34 @@ describe('linha do tempo sem duplicatas', () => {
     expect(timeline[0]?.notes?.join(' ')).toContain('horários diferentes');
     expect(busyIntervals(timeline)).toHaveLength(1);
   });
+
+  it('mostra lembrete antigo marcado na Agenda como lembrete, sem ocupar horário', () => {
+    const timeline = buildTimeline({
+      from: '2026-10-05',
+      to: '2026-10-05',
+      now,
+      agenda: buildAgenda([], now),
+      events: [
+        event({
+          id: 'uvv123',
+          title: 'AOP 03 | Aspectos Legais da TI',
+          start: at('2026-10-05', '12:00'),
+          end: at('2026-10-05', '12:10'),
+          telegramReminder: true,
+          urgent: true,
+        }),
+      ],
+    });
+    expect(timeline).toEqual([
+      expect.objectContaining({
+        kind: 'lembrete',
+        start: '12:00',
+        notes: ['lembrete urgente que você marcou na Agenda pelo Telegram'],
+      }),
+    ]);
+    expect(timeline[0]?.end).toBeUndefined();
+    expect(busyIntervals(timeline)).toHaveLength(0);
+  });
 });
 
 describe('prioridades e alertas', () => {
