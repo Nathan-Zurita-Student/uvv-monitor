@@ -206,7 +206,7 @@ describe('ferramentas do assistente', () => {
     });
     expect(saved).toMatchObject({ status: 'saved' });
     expect(run(runner, 'get_class_schedule', {})).toMatchObject({
-      fromMemory: [
+      toldByUser: [
         { title: 'Aula de Cálculo', weekday: 'segunda', start: '19:00', end: '22:40' },
         { title: 'Aula de Cálculo', weekday: 'quarta', start: '19:00', end: '22:40' },
       ],

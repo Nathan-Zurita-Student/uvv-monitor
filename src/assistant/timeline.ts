@@ -3,6 +3,8 @@ import { itemLabel } from '../bot/activity.js';
 import { hasExplicitTime, localDateKey } from '../utils/dates.js';
 import { academicCategory, sharesTokens, sourceOfItem } from './catalog.js';
 import { addDays, daysBetween, localTime, localWeekday, zonedInstant } from './dates.js';
+import { IN_CLASS_PATTERN, sameDiscipline } from '../models/class-schedule.js';
+import { cancellationFor, type ClassCancellation } from './classes.js';
 import type { WeeklySlot } from './memory.js';
 import type { AcademicCategory, CalendarEvent, InfoSource, PersonalReminder } from './types.js';
 
@@ -22,6 +24,9 @@ export interface TimelineEntry {
   category?: AcademicCategory;
   notes?: string[];
   conditional?: boolean;
+  /** Prova/apresentação sem hora: horário da aula daquele dia, o mais provável. */
+  probableStart?: string;
+  probableEnd?: string;
 }
 
 export interface TimelineInput {
@@ -31,7 +36,32 @@ export interface TimelineInput {
   agenda: Agenda;
   events?: CalendarEvent[];
   reminders?: PersonalReminder[];
+  /** Aulas semanais: Quadro de Horários do Portal primeiro, depois as que o usuário contou. */
   slots?: WeeklySlot[];
+  /** Avisos de "não haverá aula" dos professores. */
+  cancellations?: ClassCancellation[];
+  /** false: as aulas só servem para o horário provável das provas (não entram na lista). */
+  listSlots?: boolean;
+}
+
+function slotDiscipline(slot: WeeklySlot): string {
+  return slot.discipline ?? slot.title.replace(/^Aula de\s+/i, '');
+}
+
+/** Aula presencial da disciplina naquele dia, que não foi cancelada. */
+function classThatDay(input: TimelineInput, discipline: string | undefined, date: string) {
+  if (!discipline) return undefined;
+  const weekday = localWeekday(zonedInstant(date, '12:00'));
+  return (input.slots ?? [])
+    .filter(
+      (slot) =>
+        slot.category === 'aula' &&
+        !slot.online &&
+        slot.weekday === weekday &&
+        sameDiscipline(slotDiscipline(slot), discipline),
+    )
+    .filter((slot) => !cancellationFor(input.cancellations, slotDiscipline(slot), date))
+    .sort((left, right) => left.startTime.localeCompare(right.startTime))[0];
 }
 
 function academicEntries(agenda: Agenda): Array<AgendaEntry & { due: Date }> {
@@ -64,6 +94,25 @@ export function buildTimeline(input: TimelineInput): TimelineEntry[] {
       entry.kind === 'TASK' &&
       entry.due.getTime() < now.getTime() &&
       !['DONE', 'IGNORED'].includes(entry.item.status);
+    const date = localDateKey(entry.due);
+    // Prova ou apresentação sem hora: o horário provável é o da aula daquele dia.
+    const classSlot =
+      !timed &&
+      (entry.kind === 'EXAM' ||
+        IN_CLASS_PATTERN.test(`${entry.item.title} ${entry.item.metadata?.aiSummary ?? ''}`))
+        ? classThatDay(input, entry.item.discipline, date)
+        : undefined;
+    const notes = [
+      ...(entry.date?.source === 'AI'
+        ? ['data lida pela IA em um texto, sem confirmação oficial']
+        : []),
+      ...(!timed && entry.kind === 'EXAM' ? ['horário não informado pela faculdade'] : []),
+      ...(classSlot
+        ? [
+            `aula de ${slotDiscipline(classSlot)} nesse dia: ${classSlot.startTime}–${classSlot.endTime} (horário provável; o aviso não informou a hora)`,
+          ]
+        : []),
+    ];
     const timelineEntry: TimelineEntry = {
       id: entry.item.id,
       date: localDateKey(entry.due),
@@ -74,16 +123,8 @@ export function buildTimeline(input: TimelineInput): TimelineEntry[] {
       status: overdue ? 'atrasada' : entry.item.status === 'TODO' ? 'pendente' : entry.item.status,
       category: academicCategory(entry.item),
       ...(entry.conditional ? { conditional: true } : {}),
-      ...(entry.date?.source === 'AI' || (!timed && entry.kind === 'EXAM')
-        ? {
-            notes: [
-              ...(entry.date?.source === 'AI'
-                ? ['data lida pela IA em um texto, sem confirmação oficial']
-                : []),
-              ...(!timed && entry.kind === 'EXAM' ? ['horário não informado pela faculdade'] : []),
-            ],
-          }
-        : {}),
+      ...(notes.length > 0 ? { notes } : {}),
+      ...(classSlot ? { probableStart: classSlot.startTime, probableEnd: classSlot.endTime } : {}),
     };
     return { entry, timelineEntry };
   });
@@ -164,13 +205,14 @@ export function buildTimeline(input: TimelineInput): TimelineEntry[] {
     });
   }
 
-  // Aulas e rotinas da memória, quando a Agenda não tem o mesmo horário.
+  // Aulas (Quadro de Horários e memória) e rotinas, quando a Agenda não tem o mesmo horário.
   const days = Math.max(0, daysBetween(from, to));
-  for (let offset = 0; offset <= days && offset < 62; offset += 1) {
+  for (let offset = 0; offset <= days && offset < 62 && input.listSlots !== false; offset += 1) {
     const date = addDays(from, offset);
     const weekday = localWeekday(zonedInstant(date, '12:00'));
     for (const slot of input.slots ?? []) {
-      if (slot.weekday !== weekday) continue;
+      // EAD: o horário do quadro é só referência, não há aula presencial.
+      if (slot.weekday !== weekday || slot.online) continue;
       const duplicate = result.some(
         (entry) =>
           entry.date === date &&
@@ -179,6 +221,10 @@ export function buildTimeline(input: TimelineInput): TimelineEntry[] {
           (entry.kind === 'aula' || sharesTokens(entry.title, slot.title)),
       );
       if (duplicate) continue;
+      const cancelled =
+        slot.category === 'aula'
+          ? cancellationFor(input.cancellations, slotDiscipline(slot), date)
+          : undefined;
       result.push({
         id: slot.id,
         date,
@@ -186,7 +232,13 @@ export function buildTimeline(input: TimelineInput): TimelineEntry[] {
         end: slot.endTime,
         title: slot.title,
         kind: slot.category === 'aula' ? 'aula' : 'compromisso',
-        source: 'memoria',
+        source: slot.source ?? 'memoria',
+        ...(cancelled
+          ? {
+              status: 'cancelada',
+              notes: [`o professor avisou que não haverá aula ("${cancelled.title}")`],
+            }
+          : {}),
       });
     }
   }
@@ -221,7 +273,13 @@ export function busyIntervals(
   timeline: TimelineEntry[],
 ): Array<{ start: Date; end: Date; title: string }> {
   return timeline.flatMap((entry) => {
-    if (!entry.start || entry.kind === 'entrega' || entry.kind === 'lembrete') return [];
+    if (
+      !entry.start ||
+      entry.kind === 'entrega' ||
+      entry.kind === 'lembrete' ||
+      entry.status === 'cancelada'
+    )
+      return [];
     const start = zonedInstant(entry.date, entry.start);
     const end = entry.end
       ? zonedInstant(entry.date, entry.end)

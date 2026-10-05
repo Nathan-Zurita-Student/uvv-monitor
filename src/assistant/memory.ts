@@ -1,5 +1,6 @@
 import {
   memoryCategories,
+  type InfoSource,
   type MemoryCategory,
   type MemoryFact,
   type PersonalReminder,
@@ -124,6 +125,11 @@ export interface WeeklySlot {
   startTime: string;
   endTime: string;
   category: MemoryCategory;
+  /** "portal" para o Quadro de Horários; sem valor = memória do usuário. */
+  source?: InfoSource;
+  discipline?: string;
+  /** Disciplina EAD: horário de referência, sem aula presencial. */
+  online?: boolean;
 }
 
 export function weeklySlots(facts: MemoryFact[]): WeeklySlot[] {
@@ -137,6 +143,7 @@ export function weeklySlots(facts: MemoryFact[]): WeeklySlot[] {
       startTime: fact.startTime!,
       endTime,
       category: fact.category,
+      ...(fact.category === 'aula' ? { discipline: fact.subject } : {}),
     }));
   });
 }

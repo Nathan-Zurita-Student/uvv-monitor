@@ -1,6 +1,8 @@
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { doPost, processReminders } from '../../src/gas/entry.js';
+import { classSlotToRow } from '../../src/models/class-schedule.js';
+import { portalDocumentToRow } from '../../src/models/portal-document.js';
 import { academicItemToRow, tables, type TableName } from '../../src/persistence/rows.js';
 import { exam, item } from '../bot/fixtures.js';
 
@@ -337,6 +339,50 @@ describe('assistente no webhook', () => {
     expect(edit?.payload.text).toContain('📅 <b>Hoje</b>');
     expect(edit?.payload.text).toContain('17:00–18:00 Dentista');
     expect(requests.some((request) => request.url.includes('calendar/v3'))).toBe(true);
+  });
+
+  it('reenvia o arquivo do professor pelo file_id e mostra a aula do quadro em Hoje', () => {
+    sheets.get('portal_documents')!.push(
+      portalDocumentToRow({
+        id: 'doc:U3',
+        postExternalId: 'post:1',
+        discipline: 'Cálculo Numérico Computacional',
+        postTitle: 'Unidade 03',
+        publishedOn: '2026-09-21',
+        fileName: 'Unidade_03.pdf',
+        url: 'x',
+        contentType: 'application/pdf',
+        sizeBytes: 1,
+        sha256: 'a',
+        pages: 57,
+        status: 'lido',
+        fetchedAt: '2026-10-05T12:00:00Z',
+        telegramFileId: 'file-u3',
+        sentAt: '2026-10-05T12:00:00Z',
+      }),
+    );
+    sheets.get('class_schedule')!.push(
+      classSlotToRow(
+        {
+          code: 'DESENV',
+          discipline: 'Desenvolvimento Mobile',
+          weekday: 1,
+          startTime: '19:10',
+          endTime: '20:50',
+          online: false,
+          period: '2026/2',
+        },
+        '2026-10-05T12:00:00Z',
+      ),
+    );
+    tap('mf|f|doc:U3', 140);
+    expect(telegramCalls.find((call) => call.method === 'sendDocument')?.payload).toMatchObject({
+      document: 'file-u3',
+      caption: 'Unidade 03 · 21/09',
+    });
+    tap('v|today|', 141);
+    const edit = telegramCalls.find((call) => call.method === 'editMessageText');
+    expect(edit?.payload.text).toContain('19:10–20:50 Aula de Desenvolvimento Mobile');
   });
 
   it('envia um único aviso proativo por dia, com botão para organizar o estudo', () => {

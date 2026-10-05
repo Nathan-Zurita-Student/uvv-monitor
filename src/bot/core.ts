@@ -16,7 +16,7 @@ import {
   type RenderContext,
 } from './screens.js';
 import { userStatusRecord } from './status.js';
-import { renderView } from './views.js';
+import { disciplineKey, renderView, sendableMaterials } from './views.js';
 import { escapeHtml } from '../telegram/html.js';
 
 /** Pedido de horário livre ("Escolher horário") aguardando a resposta do usuário. */
@@ -33,7 +33,9 @@ export type BotEffect =
   | { type: 'send'; text: string; keyboard?: Keyboard; forceReply?: boolean }
   | { type: 'setStatus'; record: UserTaskStatus }
   | { type: 'setReminder'; reminder: Reminder }
-  | { type: 'setPending'; pending: PendingInput | undefined };
+  | { type: 'setPending'; pending: PendingInput | undefined }
+  /** Reenvia arquivos já enviados antes (pelo file_id do Telegram). */
+  | { type: 'sendFiles'; files: Array<{ fileId: string; caption?: string }> };
 
 export interface BotInput {
   chatId: string;
@@ -73,6 +75,8 @@ function instantText(action: CallbackAction): string | undefined {
       return action.option === 'custom' ? customReminderText : undefined;
     case 'assist':
       return 'Deixa comigo, já vou organizar 📚';
+    case 'files':
+      return '📎 Já vou mandar';
     case 'legacy':
     case 'confirm':
       return undefined;
@@ -241,7 +245,39 @@ function handleCallback(
     case 'assist':
       // Tratados pelo assistente no Apps Script; aqui (modo de reserva) não há GPT.
       return [answer('Isso precisa do assistente ativo no Apps Script.')];
+    case 'files': {
+      const files = filesFor(context, action);
+      if (files.length === 0) return [answer('Não achei esse arquivo. Abra /materiais de novo.')];
+      return [answer(), { type: 'sendFiles', files }];
+    }
   }
+}
+
+/** Arquivos pedidos pelo botão, na ordem em que foram postados, sem repetir o mesmo conteúdo. */
+export function filesFor(
+  context: RenderContext,
+  action: Extract<CallbackAction, { type: 'files' }>,
+): Array<{ fileId: string; caption?: string }> {
+  const available = sendableMaterials(context);
+  const chosen =
+    action.scope === 'file'
+      ? available.filter((document) => document.id === action.key)
+      : available
+          .filter((document) => disciplineKey(document.discipline).startsWith(action.key))
+          .sort((left, right) => left.publishedOn.localeCompare(right.publishedOn));
+  const seen = new Set<string>();
+  return chosen.flatMap((document, index) => {
+    if (seen.has(document.telegramFileId)) return [];
+    seen.add(document.telegramFileId);
+    const discipline = document.discipline.replace(/^\S+\s+-\s+/, '');
+    const date = document.publishedOn
+      ? ` · ${document.publishedOn.slice(8, 10)}/${document.publishedOn.slice(5, 7)}`
+      : '';
+    const header =
+      index === 0 && action.scope === 'discipline' ? `📚 <b>${escapeHtml(discipline)}</b>\n` : '';
+    const caption = `${header}${escapeHtml(document.postTitle.slice(0, 200))}${date}`;
+    return [{ fileId: document.telegramFileId, caption }];
+  });
 }
 
 const commandViews: Record<string, ViewName> = {
@@ -262,6 +298,8 @@ const commandViews: Record<string, ViewName> = {
   concluidas: 'done',
   uvv: 'uvv',
   assistente: 'ask',
+  materiais: 'files',
+  arquivos: 'files',
 };
 
 /** Telas que mostram compromissos da Google Agenda (o Apps Script busca antes de desenhar). */

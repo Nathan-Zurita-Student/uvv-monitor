@@ -23,7 +23,8 @@ describe('painel novo', () => {
         '✅ Concluídas',
         '📩 Novidades',
         '🎓 UVV',
-        '🤖 Perguntar ao assistente',
+        '📂 Materiais',
+        '🤖 Perguntar',
       ]),
     );
   });

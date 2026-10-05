@@ -33,6 +33,33 @@ export function sendHtml(props: BotProperties, html: string, keyboard?: Keyboard
   });
 }
 
+/**
+ * Reenvia arquivos que o monitor já mandou (pelo file_id: sem novo upload). Até 10 por álbum.
+ */
+export function sendFilesById(
+  props: BotProperties,
+  files: Array<{ fileId: string; caption?: string }>,
+): void {
+  for (let start = 0; start < files.length; start += 10) {
+    const part = files.slice(start, start + 10);
+    const caption = (file: { caption?: string }) =>
+      file.caption ? { caption: file.caption.slice(0, 1024), parse_mode: 'HTML' } : {};
+    if (part.length === 1) {
+      const [file] = part as [{ fileId: string; caption?: string }];
+      telegram(props.botToken, 'sendDocument', {
+        chat_id: props.chatId,
+        document: file.fileId,
+        ...caption(file),
+      });
+    } else {
+      telegram(props.botToken, 'sendMediaGroup', {
+        chat_id: props.chatId,
+        media: part.map((file) => ({ type: 'document', media: file.fileId, ...caption(file) })),
+      });
+    }
+  }
+}
+
 /** "digitando…" no Telegram enquanto o assistente pensa (dura ~5 s). */
 export function typing(props: BotProperties): void {
   try {

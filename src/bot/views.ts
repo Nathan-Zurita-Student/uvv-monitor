@@ -3,13 +3,16 @@ import { isAiIrrelevant, publishedAt } from '../agenda/focus.js';
 import { academicCategory, sourceOfItem } from '../assistant/catalog.js';
 import { addDays, longDayLabel } from '../assistant/dates.js';
 import { computeInsights } from '../assistant/insights.js';
+import { classCancellations, classWeeklySlots } from '../assistant/classes.js';
 import { weeklySlots } from '../assistant/memory.js';
 import { buildTimeline, type TimelineEntry, type TimelineKind } from '../assistant/timeline.js';
 import type { InfoSource } from '../assistant/types.js';
 import type { AcademicItem } from '../models/academic-item.js';
+import { normalizeDiscipline } from '../models/class-schedule.js';
+import { fileIcon, type PortalDocument } from '../models/portal-document.js';
 import { escapeHtml, italic, truncate } from '../telegram/html.js';
 import { ACADEMIC_TIMEZONE, localDateKey, parseAcademicDate } from '../utils/dates.js';
-import { dayMonth, itemIcon, itemLabel } from './activity.js';
+import { dayMonth, itemIcon, itemLabel, shortDiscipline } from './activity.js';
 import { encodeCallback, type ViewName } from './callbacks.js';
 import {
   backToHome,
@@ -92,9 +95,82 @@ const homeMenu = (agenda: Agenda): Keyboard => [
         ],
       ]
     : []),
-  [viewButton('🤖 Perguntar ao assistente', 'ask')],
+  [viewButton('📂 Materiais', 'files'), viewButton('🤖 Perguntar', 'ask')],
   [viewButton('🔄 Atualizar', 'home', true)],
 ];
+
+/** Arquivos já enviados no Telegram (os que podem ser reenviados pelo file_id). */
+export function sendableMaterials(context: RenderContext): PortalDocument[] {
+  return (context.materials ?? []).filter((document) => document.telegramFileId);
+}
+
+/** Chave curta e estável da disciplina para o botão (limite de 64 bytes do Telegram). */
+export function disciplineKey(discipline: string): string {
+  return normalizeDiscipline(discipline).slice(0, 30).trim();
+}
+
+function dayMonthOf(date: string): string {
+  return date ? `${date.slice(8, 10)}/${date.slice(5, 7)}` : '';
+}
+
+function renderFiles(context: RenderContext): Rendered {
+  const files = sendableMaterials(context);
+  if (files.length === 0) {
+    return {
+      text: [
+        '📂 <b>Materiais dos professores</b>',
+        '',
+        'Ainda não baixei arquivos dos posts. Eles chegam aqui depois da próxima verificação do Portal (12h, 17h e 21h).',
+      ].join('\n'),
+      keyboard: [backToHome],
+    };
+  }
+  const groups = new Map<string, PortalDocument[]>();
+  for (const file of files) {
+    const name = file.discipline.replace(/^\S+\s+-\s+/, '') || 'Outras';
+    groups.set(name, [...(groups.get(name) ?? []), file]);
+  }
+  const ordered = [...groups.entries()].sort((left, right) => left[0].localeCompare(right[0]));
+  const lines = ['📂 <b>Materiais dos professores</b>', ''];
+  for (const [name, group] of ordered) {
+    const last =
+      group
+        .map((file) => file.publishedOn)
+        .sort()
+        .at(-1) ?? '';
+    lines.push(
+      `📚 <b>${escapeHtml(shortDiscipline(name) ?? name)}</b> · ${plural(group.length, 'arquivo', 'arquivos')}${last ? ` · último em ${dayMonthOf(last)}` : ''}`,
+    );
+  }
+  const recent = [...files]
+    .sort((left, right) => right.publishedOn.localeCompare(left.publishedOn))
+    .slice(0, 5);
+  lines.push('', '<b>Mais recentes</b>');
+  for (const file of recent) {
+    lines.push(
+      `${fileIcon(file.fileName)} ${escapeHtml(file.fileName)} · ${escapeHtml(shortDiscipline(file.discipline) ?? file.discipline)}${file.publishedOn ? ` · ${dayMonthOf(file.publishedOn)}` : ''}`,
+    );
+  }
+  lines.push('', italic('Toque para eu mandar os arquivos aqui na conversa.'));
+  const disciplineButtons = ordered.map(([name, group]) => ({
+    text: `📚 ${truncate(shortDiscipline(name) ?? name, 24)} (${String(group.length)})`,
+    callback_data: encodeCallback({ type: 'files', scope: 'discipline', key: disciplineKey(name) }),
+  }));
+  const rows: Keyboard = [];
+  for (let index = 0; index < disciplineButtons.length; index += 2) {
+    rows.push(disciplineButtons.slice(index, index + 2));
+  }
+  for (const file of recent) {
+    rows.push([
+      {
+        text: `${fileIcon(file.fileName)} ${truncate(file.fileName, 40)}`,
+        callback_data: encodeCallback({ type: 'files', scope: 'file', key: file.id }),
+      },
+    ]);
+  }
+  rows.push(backToHome);
+  return { text: lines.join('\n'), keyboard: rows };
+}
 
 const sourceNames: Record<InfoSource, string> = {
   usuario: 'você',
@@ -135,11 +211,23 @@ function timelineLine(entry: TimelineEntry): string {
       : '';
   const status = entry.status === 'atrasada' ? ' · 🔴 atrasada' : '';
   const conditional = entry.conditional ? ' (só se precisar)' : '';
-  return `${icon} ${prefix}${escapeHtml(entry.title)}${conditional}${time}${status}`;
+  if (entry.status === 'cancelada') {
+    return `${icon} <s>${prefix}${escapeHtml(entry.title)}</s> · sem aula (aviso do professor)`;
+  }
+  const probable =
+    !entry.start && entry.probableStart
+      ? ` · provável ${entry.probableStart} (horário da aula)`
+      : '';
+  return `${icon} ${prefix}${escapeHtml(entry.title)}${conditional}${time}${probable}${status}`;
 }
 
 function timelineFor(context: RenderContext, from: string, to: string, withClasses: boolean) {
   const schedule = context.schedule;
+  // O quadro de horários também dá o horário provável de provas sem hora, mesmo sem listar aulas.
+  const slots = [
+    ...classWeeklySlots(schedule?.classes ?? []),
+    ...weeklySlots(schedule?.memory ?? []),
+  ];
   return buildTimeline({
     from,
     to,
@@ -147,7 +235,13 @@ function timelineFor(context: RenderContext, from: string, to: string, withClass
     agenda: context.agenda,
     ...(schedule?.events ? { events: schedule.events } : {}),
     ...(schedule?.personalReminders ? { reminders: schedule.personalReminders } : {}),
-    ...(withClasses && schedule?.memory ? { slots: weeklySlots(schedule.memory) } : {}),
+    ...(slots.length > 0
+      ? {
+          slots,
+          listSlots: withClasses,
+          cancellations: classCancellations(context.items, context.now),
+        }
+      : {}),
   });
 }
 
@@ -300,6 +394,7 @@ export function renderView(context: RenderContext, view: ViewName): Rendered {
     return { text: lines.join('\n'), keyboard: homeMenu(agenda) };
   }
   if (view === 'today') return renderToday(context);
+  if (view === 'files') return renderFiles(context);
   if (view === 'week') {
     const today = localDateKey(now);
     return renderDays(context, today, addDays(today, 6), 'week');

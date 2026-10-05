@@ -8,6 +8,7 @@ import type {
   UserTaskStatus,
 } from '../models/academic-item.js';
 import type { NotificationLogEntry, Reminder, TelegramBatch } from '../models/bot.js';
+import { portalDocumentColumns, portalDocumentTextColumns } from '../models/portal-document.js';
 
 /**
  * Colunas de cada aba da planilha. Compartilhado entre o monitor (Node) e o bot no Apps Script,
@@ -105,6 +106,22 @@ export const tables = {
     'outcome',
     'reply',
   ],
+  /** Quadro de Horários do Portal, regravado a cada coleta. */
+  class_schedule: [
+    'id',
+    'code',
+    'discipline',
+    'weekday',
+    'startTime',
+    'endTime',
+    'online',
+    'period',
+    'updatedAt',
+  ],
+  /** Arquivos dos posts dos professores (baixados e enviados no Telegram). */
+  portal_documents: portalDocumentColumns,
+  /** Texto extraído de cada arquivo (só o assistente lê, sob demanda). */
+  portal_document_texts: portalDocumentTextColumns,
 } as const;
 
 export type TableName = keyof typeof tables;

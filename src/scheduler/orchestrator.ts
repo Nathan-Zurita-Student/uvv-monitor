@@ -13,6 +13,8 @@ import { GoogleCalendarGateway } from '../calendar/google-gateway.js';
 import { isCalendarSyncCandidate, syncCalendarEvent } from '../calendar/service.js';
 import { GmailGoogleGateway } from '../gmail/google-gateway.js';
 import { collectRelevantGmail } from '../gmail/collector.js';
+import type { AcademicItem } from '../models/academic-item.js';
+import type { ClassSlot } from '../models/class-schedule.js';
 import type { RunHistory } from '../models/run.js';
 import { deduplicateItems, type DetectedItemCandidate } from '../persistence/deduplication.js';
 import { GoogleSheetsAcademicRepository } from '../persistence/google-sheets.js';
@@ -25,11 +27,20 @@ import { verificationWindow, type DailySlot, isWeeklyReviewRun } from './windows
 import { TelegramClient } from '../telegram/client.js';
 import { escapeHtml } from '../telegram/html.js';
 import { deliverNotifications } from '../telegram/notifier.js';
+import { deliverPortalFiles, type DownloadedDocument } from '../telegram/portal-files.js';
 import { processTelegramUpdates } from '../telegram/processor.js';
 import { refreshWebhookCache } from '../telegram/webhook-cache.js';
 import { logger } from '../utils/logger.js';
 import { collectMoodleCalendar, reconcileEadCalendar } from '../moodle/calendar-feed.js';
 import { createAiProvider, enrichItemsWithAi } from '../ai/service.js';
+
+/** Publicado há mais de uma semana: entra no histórico sem virar aviso de novidade. */
+export function isOldNews(item: AcademicItem, now: Date): boolean {
+  const received = item.metadata?.receivedAt;
+  if (!received) return false;
+  const published = Date.parse(received);
+  return Number.isFinite(published) && now.getTime() - published > 7 * 24 * 60 * 60_000;
+}
 
 export async function runMonitor(
   config: AppConfig,
@@ -64,16 +75,47 @@ export async function runMonitor(
   }
 
   const candidates: DetectedItemCandidate[] = [];
+  // Arquivos dos posts já enviados no Telegram não são baixados de novo; os que falharam (download
+  // ou envio) são tentados outra vez.
+  const storedDocuments = await repository.listPortalDocuments();
+  const documentTexts = await repository.listPortalDocumentTexts();
+  let downloaded: DownloadedDocument[] = [];
+  let classSlots: ClassSlot[] | undefined;
   const portalSession = await createPortalBrowserSession();
   try {
     await ensurePortalAuthenticated(portalSession.page, requirePortalCredentials(config), {
       timeoutMs: config.PORTAL_TIMEOUT_MS,
       diagnosticsDirectory: config.DIAGNOSTICS_DIR,
     });
-    const portal = await collectPortalSafely(portalSession.page);
+    const portal = await collectPortalSafely(portalSession.page, {
+      knownDocumentIds: new Set(
+        storedDocuments
+          .filter((document) => document.telegramFileId || document.status === 'grande demais')
+          .map((document) => document.id),
+      ),
+      now,
+    });
     candidates.push(...portal.items);
     run.errors.push(...portal.errors.map((error) => `Portal ${error}`));
     run.portalStatus = portal.errors.length === 0 ? 'SUCCESS' : 'PARTIAL';
+    if (portal.schedule) {
+      classSlots = portal.schedule;
+      await repository.replaceClassSchedule(portal.schedule, now.toISOString());
+    }
+    downloaded = portal.documents;
+    for (const document of downloaded) {
+      if (document.text) documentTexts.set(document.id, document.text);
+    }
+    if (downloaded.length > 0) {
+      logger.info(
+        {
+          module: 'Portal',
+          documents: downloaded.length,
+          read: downloaded.filter((document) => document.status === 'lido').length,
+        },
+        'Arquivos dos posts baixados',
+      );
+    }
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : 'FAILED';
     run.portalStatus = code === 'CAPTCHA_OR_MFA' ? 'NOT_VERIFIED' : 'FAILED';
@@ -131,12 +173,24 @@ export async function runMonitor(
     [...diff.newItems, ...meaningfulChanges.map(({ item }) => item)].map((item) => item.id),
   );
 
+  const attachmentsByPost = new Map<string, Array<{ name: string; text: string }>>();
+  const documentsById = new Map(storedDocuments.map((document) => [document.id, document]));
+  for (const document of downloaded) documentsById.set(document.id, document);
+  for (const document of documentsById.values()) {
+    const text = documentTexts.get(document.id);
+    if (!text) continue;
+    attachmentsByPost.set(document.postExternalId, [
+      ...(attachmentsByPost.get(document.postExternalId) ?? []),
+      { name: document.fileName, text },
+    ]);
+  }
   try {
     const ai = await enrichItemsWithAi(prioritized, createAiProvider(config), {
       maxCalls: config.AI_MAX_CALLS_PER_RUN,
       maxInputCharacters: config.AI_MAX_INPUT_CHARS,
       priorityIds: noveltyIds,
       now,
+      attachmentsFor: (item) => attachmentsByPost.get(item.externalId) ?? [],
     });
     prioritized = ai.items;
     if (ai.errors.length > 0) run.errors.push(...ai.errors.map((error) => `IA: ${error}`));
@@ -166,9 +220,17 @@ export async function runMonitor(
 
   const calendar = new GoogleCalendarGateway(googleCredentials, config.GOOGLE_CALENDAR_ID);
   try {
+    // Sem o quadro desta coleta, vale o último que foi lido do Portal.
+    classSlots ??= await repository.listClassSchedule();
     const calendarResults: Record<string, number> = {};
     for (const item of allItems.filter(isCalendarSyncCandidate)) {
-      const result = await syncCalendarEvent(calendar, item, config.DRY_RUN, item.firstSeenAt);
+      const result = await syncCalendarEvent(
+        calendar,
+        item,
+        config.DRY_RUN,
+        item.firstSeenAt,
+        classSlots,
+      );
       calendarResults[result.action] = (calendarResults[result.action] ?? 0) + 1;
       if ('eventId' in result && item.calendarEventId !== result.eventId) {
         await repository.upsertDetectedItems([
@@ -216,8 +278,13 @@ export async function runMonitor(
     agenda,
     items: allItems,
     log: await repository.listNotificationLog(),
-    // Na primeira leitura nada é novidade; o registro é criado em silêncio.
-    newItemIds: new Set(isBootstrap ? [] : diff.newItems.map((item) => item.id)),
+    // Na primeira leitura nada é novidade; o registro é criado em silêncio. Posts antigos que só
+    // agora apareceram (o mural passou a ser lido inteiro) também não são novidade.
+    newItemIds: new Set(
+      isBootstrap
+        ? []
+        : diff.newItems.filter((item) => !isOldNews(item, now)).map((item) => item.id),
+    ),
     now,
   });
   const context = createRenderContext({
@@ -246,6 +313,29 @@ export async function runMonitor(
     },
     'Notificações processadas',
   );
+
+  // Arquivos dos posts: enviados depois dos avisos, para o card do post chegar antes do arquivo.
+  if (downloaded.length > 0) {
+    try {
+      const delivery = await deliverPortalFiles(telegram, downloaded, storedDocuments, now, {
+        dryRun: config.DRY_RUN,
+      });
+      await repository.upsertPortalDocuments(
+        delivery.documents.map((document) => {
+          const stored = { ...document };
+          delete stored.bytes;
+          return stored;
+        }),
+      );
+      run.errors.push(...delivery.errors);
+      logger.info(
+        { module: 'Telegram', sent: delivery.sent, documents: downloaded.length },
+        'Arquivos dos posts enviados',
+      );
+    } catch (error) {
+      run.errors.push(`Arquivos dos posts: ${error instanceof Error ? error.message : 'erro'}`);
+    }
+  }
 
   run.finishedAt = new Date().toISOString();
   await repository.appendRunHistory(run);

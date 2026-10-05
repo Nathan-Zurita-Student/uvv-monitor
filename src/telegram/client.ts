@@ -15,6 +15,19 @@ export interface TelegramMessageOptions {
   forceReply?: boolean;
 }
 
+export interface OutgoingFile {
+  bytes: Uint8Array;
+  fileName: string;
+  contentType?: string;
+  /** Legenda em HTML (até 1024 caracteres). */
+  caption?: string;
+}
+
+interface TelegramFileMessage {
+  message_id: number;
+  document?: { file_id: string };
+}
+
 /** O que o restante do sistema precisa do Telegram; facilita testes com um envio falso. */
 export interface TelegramSender {
   sendMessage(text: string, options?: TelegramMessageOptions): Promise<TelegramMessage>;
@@ -91,6 +104,70 @@ export class TelegramClient implements TelegramSender {
     }
     if (!sent) throw new Error('Telegram não retornou a mensagem enviada.');
     return sent;
+  }
+
+  /**
+   * Envia arquivos como documentos (qualidade original, inclusive imagens). De 2 a 10 viram um
+   * álbum. Devolve o file_id de cada arquivo, na mesma ordem, para reenviar sem novo upload.
+   */
+  async sendFiles(files: OutgoingFile[], options: { silent?: boolean } = {}): Promise<string[]> {
+    if (files.length === 0) return [];
+    if (files.length > 10) throw new Error('Um álbum do Telegram aceita até 10 arquivos.');
+    const form = new FormData();
+    form.set('chat_id', this.chatId);
+    if (options.silent) form.set('disable_notification', 'true');
+    const blob = (file: OutgoingFile) =>
+      new Blob([new Uint8Array(file.bytes)], {
+        type: file.contentType || 'application/octet-stream',
+      });
+    if (files.length === 1) {
+      const [file] = files as [OutgoingFile];
+      form.set('document', blob(file), file.fileName);
+      if (file.caption) {
+        form.set('caption', file.caption.slice(0, 1024));
+        form.set('parse_mode', 'HTML');
+      }
+      const message = await this.upload<TelegramFileMessage>('sendDocument', form);
+      return [message.document?.file_id ?? ''];
+    }
+    form.set(
+      'media',
+      JSON.stringify(
+        files.map((file, index) => ({
+          type: 'document',
+          media: `attach://file${String(index)}`,
+          ...(file.caption ? { caption: file.caption.slice(0, 1024), parse_mode: 'HTML' } : {}),
+        })),
+      ),
+    );
+    files.forEach((file, index) => form.set(`file${String(index)}`, blob(file), file.fileName));
+    const messages = await this.upload<TelegramFileMessage[]>('sendMediaGroup', form);
+    return messages.map((message) => message.document?.file_id ?? '');
+  }
+
+  /** Upload multipart com nova tentativa quando o Telegram pede para esperar (HTTP 429). */
+  private async upload<T>(method: string, form: FormData): Promise<T> {
+    for (let attempt = 1; ; attempt += 1) {
+      const response = await fetch(`${this.baseUrl}/${method}`, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(180_000),
+      });
+      const payload = (await response
+        .json()
+        .catch(() => ({ ok: false }))) as TelegramApiResponse<T> & {
+        parameters?: { retry_after?: number };
+      };
+      if (payload.ok) return payload.result;
+      const wait = payload.parameters?.retry_after;
+      if (response.status === 429 && wait && attempt < 4) {
+        await new Promise((resolve) => setTimeout(resolve, (wait + 1) * 1000));
+        continue;
+      }
+      throw new Error(
+        `Telegram rejeitou ${method}: ${payload.description ?? `HTTP ${String(response.status)}`}.`,
+      );
+    }
   }
 
   async pinChatMessage(messageId: number): Promise<void> {

@@ -1,5 +1,7 @@
 import type { AcademicItem, TelegramTaskMessage, UserTaskStatus } from '../models/academic-item.js';
 import type { NotificationLogEntry, Reminder, TelegramBatch } from '../models/bot.js';
+import type { ClassSlot } from '../models/class-schedule.js';
+import type { PortalDocument } from '../models/portal-document.js';
 import type { RunHistory, TelegramState } from '../models/run.js';
 import type { AcademicRepository } from './repository.js';
 
@@ -12,6 +14,8 @@ export class InMemoryAcademicRepository implements AcademicRepository {
   readonly notificationLog = new Map<string, NotificationLogEntry>();
   readonly batches = new Map<string, TelegramBatch>();
   telegramState: TelegramState = { lastUpdateId: 0 };
+  classSchedule: ClassSlot[] = [];
+  readonly documents = new Map<string, PortalDocument>();
 
   initialize(): Promise<void> {
     return Promise.resolve();
@@ -82,6 +86,46 @@ export class InMemoryAcademicRepository implements AcademicRepository {
 
   setTelegramState(state: TelegramState): Promise<void> {
     this.telegramState = structuredClone(state);
+    return Promise.resolve();
+  }
+
+  listClassSchedule(): Promise<ClassSlot[]> {
+    return Promise.resolve(structuredClone(this.classSchedule));
+  }
+
+  replaceClassSchedule(slots: ClassSlot[]): Promise<void> {
+    this.classSchedule = structuredClone(slots);
+    return Promise.resolve();
+  }
+
+  listPortalDocuments(): Promise<PortalDocument[]> {
+    return Promise.resolve(
+      Array.from(this.documents.values()).map((document) => {
+        const copy = structuredClone(document);
+        delete copy.text;
+        return copy;
+      }),
+    );
+  }
+
+  listPortalDocumentTexts(): Promise<Map<string, string>> {
+    return Promise.resolve(
+      new Map(
+        Array.from(this.documents.values())
+          .filter((document) => document.text)
+          .map((document) => [document.id, document.text!]),
+      ),
+    );
+  }
+
+  upsertPortalDocuments(documents: PortalDocument[]): Promise<void> {
+    for (const document of documents) {
+      const previous = this.documents.get(document.id);
+      this.documents.set(document.id, {
+        ...structuredClone(document),
+        ...(document.text ? {} : previous?.text ? { text: previous.text } : {}),
+      });
+    }
     return Promise.resolve();
   }
 }

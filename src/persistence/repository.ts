@@ -1,5 +1,7 @@
 import type { AcademicItem, TelegramTaskMessage, UserTaskStatus } from '../models/academic-item.js';
 import type { NotificationLogEntry, Reminder, TelegramBatch } from '../models/bot.js';
+import type { ClassSlot } from '../models/class-schedule.js';
+import type { PortalDocument } from '../models/portal-document.js';
 import type { RunHistory, TelegramState } from '../models/run.js';
 
 export interface AcademicRepository {
@@ -19,4 +21,12 @@ export interface AcademicRepository {
   appendRunHistory(run: RunHistory): Promise<void>;
   getTelegramState(): Promise<TelegramState>;
   setTelegramState(state: TelegramState): Promise<void>;
+  listClassSchedule(): Promise<ClassSlot[]>;
+  /** Regrava o quadro inteiro (o Portal mostra sempre o período atual completo). */
+  replaceClassSchedule(slots: ClassSlot[], updatedAt: string): Promise<void>;
+  /** Dados dos arquivos dos posts, sem o texto extraído. */
+  listPortalDocuments(): Promise<PortalDocument[]>;
+  listPortalDocumentTexts(): Promise<Map<string, string>>;
+  /** Grava os dados e, quando houver, o texto extraído (em abas separadas). */
+  upsertPortalDocuments(documents: PortalDocument[]): Promise<void>;
 }

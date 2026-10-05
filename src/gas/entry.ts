@@ -41,7 +41,7 @@ import {
   renderContextOf,
   type SheetWrite,
 } from './snapshot.js';
-import { sendHtml, telegram, type BotProperties } from './telegram-api.js';
+import { sendFilesById, sendHtml, telegram, type BotProperties } from './telegram-api.js';
 
 function properties(): BotProperties {
   const values = PropertiesService.getScriptProperties().getProperties();
@@ -118,6 +118,9 @@ function sendEffects(effects: BotEffect[], props: BotProperties): SheetWrite[] {
           break;
         case 'setReminder':
           writes.push({ table: 'reminders', row: reminderToRow(effect.reminder) });
+          break;
+        case 'sendFiles':
+          sendFilesById(props, effect.files);
           break;
         case 'setPending':
           if (effect.pending) {
@@ -347,6 +350,8 @@ export function refreshCache(): string {
     batches: snapshot.batches.length,
     personalReminders: snapshot.personal.length,
     memory: snapshot.memory.length,
+    classes: snapshot.classes.length,
+    files: snapshot.files.length,
     lastSyncAt: snapshot.lastSyncAt ?? null,
   });
 }

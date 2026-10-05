@@ -83,6 +83,8 @@ export interface TurnContext {
   pending?: PendingAction;
   replyContext?: string;
   lastSyncAt?: string;
+  /** Aulas de hoje segundo o Quadro de Horários (com as canceladas). */
+  classesToday?: string;
 }
 
 /** Contexto dinâmico curto enviado em toda mensagem: data, memória, alertas e pendências. */
@@ -93,6 +95,7 @@ export function turnContext(input: TurnContext, history: ConversationTurn[]): st
     `Datas de referência:\n${dateReference(now)}`,
     `Memória do usuário:\n${memoryContext(input.memory)}`,
   ];
+  if (input.classesToday) lines.push(`Aulas de hoje (Quadro de Horários): ${input.classesToday}`);
   const mentioned = new Set(input.mentionedAlerts ?? []);
   const alerts = input.alerts.filter((alert) => !mentioned.has(alert.key)).slice(0, 3);
   if (alerts.length > 0)

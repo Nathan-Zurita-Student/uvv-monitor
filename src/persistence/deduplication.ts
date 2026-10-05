@@ -78,7 +78,9 @@ function materialize(
 ): AcademicItem {
   const contentHash = hashCandidate(candidate);
   const previousAiMetadata = Object.fromEntries(
-    Object.entries(previous?.metadata ?? {}).filter(([key]) => key.startsWith('ai')),
+    Object.entries(previous?.metadata ?? {}).filter(
+      ([key]) => key.startsWith('ai') || key === 'changedAt',
+    ),
   );
   return {
     id: previous?.id ?? friendlyItemId(candidate.source, candidate.externalId),
@@ -127,7 +129,10 @@ export function deduplicateItems(
     if (!previous) {
       newItems.push(item);
     } else if (previous.contentHash !== item.contentHash) {
-      changedItems.push({ item, changes: changesBetween(previous, candidate) });
+      const changes = changesBetween(previous, candidate);
+      // Quando o conteúdo visível mudou (não só metadados da coleta): base das "novidades".
+      if (changes.length > 0) item.metadata = { ...item.metadata, changedAt: now };
+      changedItems.push({ item, changes });
     } else {
       unchangedItems.push(item);
     }

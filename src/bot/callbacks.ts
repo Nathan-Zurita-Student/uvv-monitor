@@ -15,6 +15,7 @@ export const viewNames = [
   'news',
   'uvv',
   'ask',
+  'files',
 ] as const;
 export type ViewName = (typeof viewNames)[number];
 
@@ -43,7 +44,9 @@ export type CallbackAction =
   /** Confirmação de uma ação do assistente (alterar/remover evento, cancelar lembrete). */
   | { type: 'confirm'; actionId: string; accept: boolean }
   /** Pede ao assistente uma ajuda ligada à atividade (ex.: organizar o estudo para a prova). */
-  | { type: 'assist'; itemId: string; intent: AssistIntent };
+  | { type: 'assist'; itemId: string; intent: AssistIntent }
+  /** Reenvia arquivos dos professores: todos de uma disciplina ou um arquivo. */
+  | { type: 'files'; scope: 'discipline' | 'file'; key: string };
 
 export const assistIntents = ['study'] as const;
 export type AssistIntent = (typeof assistIntents)[number];
@@ -133,6 +136,9 @@ export function encodeCallback(action: CallbackAction): string {
     case 'assist':
       value = `as|${action.itemId}|${action.intent}`;
       break;
+    case 'files':
+      value = `mf|${action.scope === 'file' ? 'f' : 'd'}|${action.key}`;
+      break;
   }
   // Todos os campos são ASCII, então caracteres = bytes.
   if (value.length > 64) {
@@ -164,6 +170,12 @@ export function decodeCallback(data: string): CallbackAction | undefined {
   }
   if (code === 'cf' && /^[a-z0-9]{6,16}$/.test(first) && ['y', 'n'].includes(second)) {
     return { type: 'confirm', actionId: first, accept: second === 'y' };
+  }
+  if (code === 'mf' && first === 'd' && /^[a-z0-9 ]{3,40}$/.test(second)) {
+    return { type: 'files', scope: 'discipline', key: second };
+  }
+  if (code === 'mf' && first === 'f' && /^doc:[\w+/=-]{1,48}$/.test(second)) {
+    return { type: 'files', scope: 'file', key: second };
   }
   if (!itemIdPattern.test(first)) return undefined;
   if (code === 'as' && (assistIntents as readonly string[]).includes(second)) {

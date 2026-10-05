@@ -3,6 +3,12 @@ import type { GoogleCredentials } from '../config/env.js';
 import { createGoogleOAuthClient } from '../google/auth.js';
 import type { AcademicItem, TelegramTaskMessage, UserTaskStatus } from '../models/academic-item.js';
 import type { NotificationLogEntry, Reminder, TelegramBatch } from '../models/bot.js';
+import { classSlotFromRow, classSlotToRow, type ClassSlot } from '../models/class-schedule.js';
+import {
+  portalDocumentFromRow,
+  portalDocumentToRow,
+  type PortalDocument,
+} from '../models/portal-document.js';
 import type { RunHistory, TelegramState } from '../models/run.js';
 import type { AcademicRepository } from './repository.js';
 import {
@@ -200,5 +206,45 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
         ],
       },
     });
+  }
+
+  async listClassSchedule(): Promise<ClassSlot[]> {
+    return (await this.rows('class_schedule')).flatMap((row) => classSlotFromRow(row) ?? []);
+  }
+
+  async replaceClassSchedule(slots: ClassSlot[], updatedAt: string): Promise<void> {
+    await this.sheets.spreadsheets.values.clear({
+      spreadsheetId: this.spreadsheetId,
+      range: "'class_schedule'!A2:Z",
+    });
+    if (slots.length === 0) return;
+    await this.sheets.spreadsheets.values.update({
+      spreadsheetId: this.spreadsheetId,
+      range: "'class_schedule'!A2",
+      valueInputOption: 'RAW',
+      requestBody: { values: slots.map((slot) => classSlotToRow(slot, updatedAt)) },
+    });
+  }
+
+  async listPortalDocuments(): Promise<PortalDocument[]> {
+    return (await this.rows('portal_documents')).flatMap((row) => portalDocumentFromRow(row) ?? []);
+  }
+
+  async listPortalDocumentTexts(): Promise<Map<string, string>> {
+    return new Map(
+      (await this.rows('portal_document_texts'))
+        .filter((row) => row[0] && row[1])
+        .map((row) => [row[0]!, row[1]!]),
+    );
+  }
+
+  async upsertPortalDocuments(documents: PortalDocument[]): Promise<void> {
+    await this.upsertRows('portal_documents', documents.map(portalDocumentToRow));
+    await this.upsertRows(
+      'portal_document_texts',
+      documents
+        .filter((document) => document.text)
+        .map((document) => [document.id, document.text!]),
+    );
   }
 }

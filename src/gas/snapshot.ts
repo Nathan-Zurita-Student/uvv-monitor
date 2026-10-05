@@ -3,6 +3,8 @@ import type { CalendarEvent } from '../assistant/types.js';
 import { createRenderContext, type RenderContext } from '../bot/screens.js';
 import { applyUserStatuses } from '../bot/status.js';
 import type { AcademicItem } from '../models/academic-item.js';
+import { classSlotFromRow, type ClassSlot } from '../models/class-schedule.js';
+import { portalDocumentFromRow, type PortalDocument } from '../models/portal-document.js';
 import {
   academicItemFromRow,
   batchFromRow,
@@ -26,6 +28,10 @@ export interface Snapshot {
   batches: string[][];
   personal: string[][];
   memory: string[][];
+  /** Quadro de Horários do Portal (aba class_schedule). */
+  classes: string[][];
+  /** Arquivos dos posts dos professores, sem o texto (aba portal_documents). */
+  files: string[][];
 }
 
 type SnapshotState = Omit<Snapshot, 'items'>;
@@ -102,8 +108,18 @@ function unpack<T>(prefix: string, values: Record<string, string>): T | undefine
 }
 
 function complete(state: SnapshotState): SnapshotState {
-  // Cópias feitas por versões anteriores não tinham lembretes pessoais nem memória.
   return { ...state, personal: state.personal ?? [], memory: state.memory ?? [] };
+}
+
+/** Cópias feitas por versões anteriores (sem as abas novas) são refeitas a partir da planilha. */
+function current(state: SnapshotState | undefined): state is SnapshotState {
+  return Boolean(
+    state &&
+    Array.isArray(state.personal) &&
+    Array.isArray(state.memory) &&
+    Array.isArray(state.classes) &&
+    Array.isArray(state.files),
+  );
 }
 
 export function readState(): SnapshotState | undefined {
@@ -111,7 +127,7 @@ export function readState(): SnapshotState | undefined {
     STATE_KEY,
     CacheService.getScriptCache().getAll(chunkKeys(STATE_KEY)),
   );
-  return state && Array.isArray(state.personal) && Array.isArray(state.memory) ? state : undefined;
+  return current(state) ? state : undefined;
 }
 
 export function readSnapshot(): Snapshot | undefined {
@@ -121,8 +137,7 @@ export function readSnapshot(): Snapshot | undefined {
   ]);
   const state = unpack<SnapshotState>(STATE_KEY, values);
   const items = unpack<string[][]>(ITEMS_KEY, values);
-  if (!state || !items || !Array.isArray(state.personal) || !Array.isArray(state.memory))
-    return undefined;
+  if (!current(state) || !items) return undefined;
   return { ...complete(state), items };
 }
 
@@ -161,6 +176,8 @@ export function buildSnapshot(sheetId: string): Snapshot {
     batches: store.rows('telegram_batches'),
     personal: store.rows('personal_reminders'),
     memory: store.rows('assistant_memory'),
+    classes: store.rows('class_schedule'),
+    files: store.rows('portal_documents'),
   };
   try {
     saveSnapshot(snapshot, true);
@@ -221,6 +238,14 @@ export function persist(writes: SheetWrite[], snapshot: Snapshot, sheetId: strin
   return updated;
 }
 
+export function filesOf(snapshot: Snapshot): PortalDocument[] {
+  return snapshot.files.flatMap((row) => portalDocumentFromRow(row) ?? []);
+}
+
+export function classesOf(snapshot: Snapshot): ClassSlot[] {
+  return snapshot.classes.flatMap((row) => classSlotFromRow(row) ?? []);
+}
+
 export function itemsOf(snapshot: Snapshot): AcademicItem[] {
   return applyUserStatuses(
     snapshot.items.map(academicItemFromRow),
@@ -239,9 +264,11 @@ export function renderContextOf(
     reminders: snapshot.reminders.map(reminderFromRow),
     batches: snapshot.batches.map(batchFromRow),
     ...(snapshot.lastSyncAt ? { lastSyncAt: snapshot.lastSyncAt } : {}),
+    materials: filesOf(snapshot),
     schedule: {
       memory: snapshot.memory.flatMap((row) => memoryFromRow(row) ?? []),
       personalReminders: snapshot.personal.flatMap((row) => personalReminderFromRow(row) ?? []),
+      classes: classesOf(snapshot),
       ...(calendar?.events ? { events: calendar.events } : {}),
       ...(calendar?.error ? { calendarError: true } : {}),
     },

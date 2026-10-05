@@ -1,18 +1,27 @@
 import type { Page } from 'playwright';
+import type { ClassSlot } from '../models/class-schedule.js';
+import type { DownloadedDocument } from '../telegram/portal-files.js';
 import type { DetectedItemCandidate } from '../persistence/deduplication.js';
 import {
   collectCalendarEvents,
   collectClassPosts,
+  collectClassSchedule,
   collectEadActivities,
   collectMessages,
   collectRegularSchedule,
   collectServiceHistory,
+  downloadPostDocuments,
 } from './collectors.js';
+import type { PortalItem } from './models.js';
 import { portalItemToCandidate } from './to-academic-item.js';
 
 export interface SafePortalCollection {
   items: DetectedItemCandidate[];
   errors: string[];
+  /** Quadro de horários lido nesta coleta (ausente se a página falhou). */
+  schedule?: ClassSlot[];
+  /** Arquivos de posts baixados nesta coleta (com o conteúdo em memória para o envio). */
+  documents: DownloadedDocument[];
 }
 
 function normalized(value: string | undefined): string {
@@ -64,23 +73,66 @@ export function reconcilePortalDuplicates(items: DetectedItemCandidate[]): Detec
   });
 }
 
-export async function collectPortalSafely(page: Page): Promise<SafePortalCollection> {
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : 'erro desconhecido';
+}
+
+export async function collectPortalSafely(
+  page: Page,
+  options: { knownDocumentIds?: ReadonlySet<string>; now?: Date } = {},
+): Promise<SafePortalCollection> {
+  const now = options.now ?? new Date();
   const items: DetectedItemCandidate[] = [];
+  const posts: PortalItem[] = [];
   const errors: string[] = [];
-  const collectors = [
+  const collectors: Array<readonly [string, (page: Page) => Promise<PortalItem[]>]> = [
     ['Mensagens', collectMessages],
-    ['Turmas', collectClassPosts],
+    ['Turmas', async (current) => (await collectClassPosts(current, now)).map(keep(posts))],
     ['AVA/EAD', collectEadActivities],
     ['Atendimento', collectServiceHistory],
     ['Calendário', collectCalendarEvents],
     ['Horários', collectRegularSchedule],
-  ] as const;
+  ];
   for (const [name, collector] of collectors) {
     try {
       items.push(...(await collector(page)).map(portalItemToCandidate));
     } catch (error) {
-      errors.push(`${name}: ${error instanceof Error ? error.message : 'erro desconhecido'}`);
+      errors.push(`${name}: ${message(error)}`);
     }
   }
-  return { items: reconcilePortalDuplicates(items), errors };
+
+  let schedule: ClassSlot[] | undefined;
+  try {
+    schedule = await collectClassSchedule(page);
+    if (schedule.length === 0)
+      errors.push('Quadro de horários: nenhuma aula encontrada na página.');
+  } catch (error) {
+    errors.push(`Quadro de horários: ${message(error)}`);
+  }
+
+  let documents: DownloadedDocument[] = [];
+  try {
+    documents = await downloadPostDocuments(
+      page,
+      posts,
+      options.knownDocumentIds ?? new Set<string>(),
+      now,
+    );
+  } catch (error) {
+    errors.push(`Arquivos dos posts: ${message(error)}`);
+  }
+
+  return {
+    items: reconcilePortalDuplicates(items),
+    errors,
+    ...(schedule && schedule.length > 0 ? { schedule } : {}),
+    documents,
+  };
+}
+
+function keep(target: PortalItem[]): (item: PortalItem) => PortalItem {
+  return (item) => {
+    target.push(item);
+    return item;
+  };
 }

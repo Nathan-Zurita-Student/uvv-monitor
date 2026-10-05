@@ -38,5 +38,9 @@ export interface ClassPostPageInput {
   bodyText: string;
   pageText: string;
   links: Array<{ text: string; href: string }>;
+  /** Botões "Baixar Arquivo" do post. */
+  attachments?: Array<{ text: string; href: string }>;
+  /** Dia da publicação lido no mural (YYYY-MM-DD). */
+  publishedOn?: string;
   referenceYear: number;
 }

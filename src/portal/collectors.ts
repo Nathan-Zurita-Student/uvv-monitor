@@ -1,10 +1,17 @@
+import { createHash } from 'node:crypto';
 import type { Page, Response } from 'playwright';
+import type { ClassSlot } from '../models/class-schedule.js';
+import { documentIdFor } from '../models/portal-document.js';
 import { parseMoodleActivity, type MoodleActivityInput } from '../moodle/activity-parser.js';
 import { logger } from '../utils/logger.js';
+import { buildClassSlots } from './class-schedule.js';
 import { PORTAL_URLS } from './constants.js';
+import type { DownloadedDocument } from '../telegram/portal-files.js';
+import { readDocument } from './documents.js';
 import { parseExamSchedulePdf } from './exam-schedule.js';
 import type { ClassCardInput, ClassPostPageInput, MessageLinkInput, PortalItem } from './models.js';
 import {
+  parseBlogTimeline,
   parseCalendarResponse,
   parseClassCards,
   parseClassPostPage,
@@ -12,6 +19,8 @@ import {
   inferItemType,
   parseMessageLinks,
   parseWorkflowResponse,
+  type BlogTimelineEntry,
+  type PostAttachment,
 } from './parsers.js';
 
 async function navigate(page: Page, url: string): Promise<void> {
@@ -119,7 +128,45 @@ export async function collectMessages(page: Page): Promise<PortalItem[]> {
   return results;
 }
 
-export async function collectClassPosts(page: Page): Promise<PortalItem[]> {
+/** O mural entrega 3 posts por página no "Carregar mais…". */
+const MAX_BLOG_PAGES = 20;
+/** Posts abertos por coleta (os mais recentes primeiro). */
+const MAX_POSTS_PER_RUN = 150;
+
+function localYear(now: Date): number {
+  return Number(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric' }).format(
+      now,
+    ),
+  );
+}
+
+/** Todos os posts do mural de uma turma, seguindo o "Carregar mais…" até acabar. */
+async function blogTimeline(page: Page, blogUrl: string, now: Date): Promise<BlogTimelineEntry[]> {
+  const parametros = new URL(blogUrl).searchParams.get('parametros');
+  const entries: BlogTimelineEntry[] = [];
+  if (parametros) {
+    for (let pageNumber = 0; pageNumber < MAX_BLOG_PAGES; pageNumber += 1) {
+      // O próprio Portal codifica o parâmetro duas vezes nessa chamada.
+      const url = `${PORTAL_URLS.base}Aluno/BlogCarregarMais/?parametros=${encodeURIComponent(
+        encodeURIComponent(parametros),
+      )}&pageSize=3&pageNumber=${String(pageNumber)}&filter=&ano=${String(localYear(now))}`;
+      const response = await page.request.get(url);
+      if (!response.ok()) break;
+      const pageEntries = parseBlogTimeline(await response.text(), now).filter(
+        (entry) => !entries.some((known) => known.postId === entry.postId),
+      );
+      if (pageEntries.length === 0) break;
+      entries.push(...pageEntries);
+    }
+  }
+  if (entries.length > 0) return entries;
+  // Sem a paginação, lê ao menos os posts que a página do mural mostra.
+  await navigate(page, blogUrl);
+  return parseBlogTimeline(await page.content(), now);
+}
+
+export async function collectClassPosts(page: Page, now = new Date()): Promise<PortalItem[]> {
   await navigate(page, PORTAL_URLS.classes);
   const cards: Array<ClassCardInput & { blogUrls: string[] }> = await page
     .locator('.card-turma')
@@ -140,31 +187,32 @@ export async function collectClassPosts(page: Page): Promise<PortalItem[]> {
       })),
     );
   const summaries = parseClassCards(cards);
-  const targets = new Map(
+  const postKey = (url: string) => /\/Aluno\/Post\/([^/?#]+)/i.exec(url)?.[1] ?? url;
+  const targets = new Map<string, { url: string; discipline: string; publishedOn?: string }>(
     summaries.map((item) => [
-      item.sourceUrl,
+      postKey(item.sourceUrl),
       { url: item.sourceUrl, discipline: item.discipline ?? '' },
     ]),
   );
 
   for (const card of cards) {
-    for (const blogUrl of card.blogUrls) {
-      await navigate(page, blogUrl);
-      const postUrls = await page
-        .locator('a[href*="/Aluno/Post/"]')
-        .evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).href));
-      for (const url of postUrls) targets.set(url, { url, discipline: card.heading });
+    for (const blogUrl of [...new Set(card.blogUrls)]) {
+      for (const entry of await blogTimeline(page, blogUrl, now)) {
+        targets.set(entry.postId, {
+          url: `${PORTAL_URLS.base}Aluno/Post/${entry.postId}`,
+          discipline: card.heading,
+          ...(entry.publishedOn ? { publishedOn: entry.publishedOn } : {}),
+        });
+      }
     }
   }
 
-  const referenceYear = Number(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Sao_Paulo',
-      year: 'numeric',
-    }).format(new Date()),
-  );
+  const referenceYear = localYear(now);
   const items: PortalItem[] = [];
-  for (const target of targets.values()) {
+  const ordered = [...targets.values()]
+    .sort((left, right) => (right.publishedOn ?? '9999').localeCompare(left.publishedOn ?? '9999'))
+    .slice(0, MAX_POSTS_PER_RUN);
+  for (const target of ordered) {
     await navigate(page, target.url);
     const panels = (await page.locator('.panel-body').allTextContents())
       .map((text) => text.replace(/\s+/g, ' ').trim())
@@ -186,11 +234,139 @@ export async function collectClassPosts(page: Page): Promise<PortalItem[]> {
           href: (link as HTMLAnchorElement).href,
         })),
       ),
+      // O botão "Baixar Arquivo" fica fora do texto do post.
+      attachments: await page.locator('a[href*="BaixarArquivoPost"]').evaluateAll((links) =>
+        links.map((link) => ({
+          text: link.getAttribute('title') || link.textContent || '',
+          href: (link as HTMLAnchorElement).href,
+        })),
+      ),
+      ...(target.publishedOn ? { publishedOn: target.publishedOn } : {}),
       referenceYear,
     };
     items.push(parseClassPostPage(input));
   }
   return items;
+}
+
+/** Quadro de Horários: uma coluna por dia, cada tempo de aula com sigla, disciplina e horário. */
+export async function collectClassSchedule(page: Page): Promise<ClassSlot[]> {
+  await navigate(page, PORTAL_URLS.schedule);
+  const data = await page.evaluate(() => {
+    const grid = document.querySelector('.conteudo-body.text-center') ?? document.body;
+    const columns = Array.from(grid.children).flatMap((column) => {
+      const day = column.querySelector('b')?.textContent ?? '';
+      const entries = Array.from(column.querySelectorAll('.schedule-item')).map((item) => ({
+        code: item.querySelector('b')?.textContent ?? '',
+        title: item.getAttribute('data-original-title') || item.getAttribute('title') || '',
+        time: item.querySelector('span')?.textContent ?? item.textContent ?? '',
+      }));
+      return day ? [{ day, entries }] : [];
+    });
+    const legend: Record<string, string> = {};
+    for (const line of Array.from(document.querySelectorAll('.panel-body li'))) {
+      const [code, ...name] = (line.textContent ?? '').split(':');
+      if (code && name.length > 0) legend[code.trim()] = name.join(':').trim();
+    }
+    const period = document.querySelector('.cabecalho-conteudo h3 small')?.textContent ?? '';
+    return { columns, legend, period };
+  });
+  return buildClassSlots(data.columns, data.period, data.legend);
+}
+
+/** Downloads por coleta (a primeira coleta pega o histórico em duas ou três execuções). */
+const MAX_DOWNLOADS_PER_RUN = 40;
+const MAX_DOCUMENT_BYTES = 45 * 1024 * 1024;
+
+/**
+ * Baixa os arquivos anexados aos posts que ainda não foram enviados ao Telegram e extrai o texto
+ * dos legíveis (PDF, DOCX, PPTX, ZIP). Usa a sessão do Portal já aberta (o download exige login);
+ * nada é salvo em disco: o conteúdo segue em memória até o envio.
+ */
+export async function downloadPostDocuments(
+  page: Page,
+  items: PortalItem[],
+  known: ReadonlySet<string>,
+  now = new Date(),
+): Promise<DownloadedDocument[]> {
+  const pending: Array<{ item: PortalItem; attachment: PostAttachment }> = [];
+  for (const item of items) {
+    if (item.origin !== 'CLASS_POST' || !item.metadata.attachments) continue;
+    let attachments: PostAttachment[];
+    try {
+      attachments = JSON.parse(item.metadata.attachments) as PostAttachment[];
+    } catch {
+      continue;
+    }
+    for (const attachment of attachments) {
+      const id = documentIdFor(attachment.id);
+      if (known.has(id) || pending.some((entry) => documentIdFor(entry.attachment.id) === id))
+        continue;
+      pending.push({ item, attachment });
+    }
+  }
+
+  const documents: DownloadedDocument[] = [];
+  for (const { item, attachment } of pending.slice(0, MAX_DOWNLOADS_PER_RUN)) {
+    const base = {
+      id: documentIdFor(attachment.id),
+      postExternalId: item.externalId,
+      discipline: item.discipline ?? '',
+      postTitle: item.title,
+      publishedOn: (item.metadata.receivedAt ?? '').slice(0, 10),
+      fileName: attachment.name,
+      url: attachment.url,
+      fetchedAt: now.toISOString(),
+      telegramFileId: '',
+      sentAt: '',
+    };
+    try {
+      const response = await page.request.get(attachment.url, { timeout: 90_000 });
+      if (!response.ok()) throw new Error(`HTTP ${String(response.status())}`);
+      const contentType = response.headers()['content-type'] ?? '';
+      const length = Number(response.headers()['content-length'] ?? 0);
+      if (length > MAX_DOCUMENT_BYTES) {
+        documents.push({
+          ...base,
+          contentType,
+          sizeBytes: length,
+          sha256: '',
+          pages: 0,
+          status: 'grande demais',
+        });
+        continue;
+      }
+      const bytes = new Uint8Array(await response.body());
+      const read =
+        bytes.length > MAX_DOCUMENT_BYTES
+          ? { pages: 0, text: '', status: 'grande demais' }
+          : await readDocument(bytes, attachment.name, contentType).catch((error: unknown) => ({
+              pages: 0,
+              text: '',
+              status: `não lido: ${error instanceof Error ? error.message.slice(0, 80) : 'erro'}`,
+            }));
+      documents.push({
+        ...base,
+        contentType,
+        sizeBytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        pages: read.pages,
+        status: read.status,
+        ...(read.text ? { text: read.text } : {}),
+        ...(bytes.length <= MAX_DOCUMENT_BYTES ? { bytes } : {}),
+      });
+    } catch (error) {
+      documents.push({
+        ...base,
+        contentType: '',
+        sizeBytes: 0,
+        sha256: '',
+        pages: 0,
+        status: `erro: ${error instanceof Error ? error.message.slice(0, 120) : 'desconhecido'}`,
+      });
+    }
+  }
+  return documents;
 }
 
 export async function collectEadActivities(page: Page): Promise<PortalItem[]> {

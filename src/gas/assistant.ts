@@ -16,6 +16,7 @@ import {
   type ModelResponse,
   type Reference,
 } from '../assistant/agent.js';
+import { classCancellations, classesTodayText } from '../assistant/classes.js';
 import { localTime } from '../assistant/dates.js';
 import { computeInsights } from '../assistant/insights.js';
 import {
@@ -24,7 +25,12 @@ import {
   personalReminderFromRow,
   personalReminderToRow,
 } from '../assistant/memory.js';
-import { executePendingAction, ToolRunner, type AssistantDeps } from '../assistant/tools.js';
+import {
+  executePendingAction,
+  ToolRunner,
+  type AssistantDeps,
+  type DocumentsPort,
+} from '../assistant/tools.js';
 import type { Insight, PendingAction } from '../assistant/types.js';
 import { itemLabel } from '../bot/activity.js';
 import { encodeCallback } from '../bot/callbacks.js';
@@ -35,6 +41,8 @@ import { localDateKey } from '../utils/dates.js';
 import { GasCalendar, GasGmail } from './google-api.js';
 import { SheetStore } from './sheet-store.js';
 import {
+  classesOf,
+  filesOf,
   itemsOf,
   persist,
   readSnapshot,
@@ -42,7 +50,7 @@ import {
   type SheetWrite,
   type Snapshot,
 } from './snapshot.js';
-import { sendHtml, typing, type BotProperties } from './telegram-api.js';
+import { sendFilesById, sendHtml, typing, type BotProperties } from './telegram-api.js';
 
 export interface AssistantEnv {
   props: BotProperties;
@@ -300,6 +308,8 @@ function buildDeps(env: AssistantEnv): AssistantDeps {
     userStatusIds: new Set(env.snapshot.statuses.map((row) => row[0] ?? '')),
     memory: env.snapshot.memory.flatMap((row) => memoryFromRow(row) ?? []),
     reminders: env.snapshot.personal.flatMap((row) => personalReminderFromRow(row) ?? []),
+    classes: classesOf(env.snapshot),
+    documents: documentsPort(env),
     calendar: calendar(),
     gmail: new GasGmail(),
     store: {
@@ -315,6 +325,36 @@ function buildDeps(env: AssistantEnv): AssistantDeps {
     requestConfirmation: (action) =>
       CacheService.getScriptCache().put(PENDING_KEY, JSON.stringify(action), 3600),
     newId,
+  };
+}
+
+function todayClasses(env: AssistantEnv): { classesToday?: string } {
+  const text = classesTodayText(
+    classesOf(env.snapshot),
+    classCancellations(itemsOf(env.snapshot), env.now),
+    env.now,
+  );
+  return text ? { classesToday: text } : {};
+}
+
+/** Arquivos dos professores: a lista vem da cópia em cache; o texto, da planilha, só se preciso. */
+function documentsPort(env: AssistantEnv): DocumentsPort {
+  let texts: Map<string, string> | undefined;
+  return {
+    list: () => filesOf(env.snapshot),
+    withText: () => {
+      texts ??= new Map(
+        SheetStore.open(env.props.sheetId)
+          .rows('portal_document_texts')
+          .filter((row) => row[0] && row[1])
+          .map((row) => [row[0]!, row[1]!]),
+      );
+      return filesOf(env.snapshot).map((document) => ({
+        ...document,
+        ...(texts!.get(document.id) ? { text: texts!.get(document.id)! } : {}),
+      }));
+    },
+    send: (files) => sendFilesById(env.props, files),
   };
 }
 
@@ -444,6 +484,7 @@ export function assistantReply(
         ...(pending ? { pending } : {}),
         ...(input.replyContext ? { replyContext: input.replyContext } : {}),
         ...(env.snapshot.lastSyncAt ? { lastSyncAt: env.snapshot.lastSyncAt } : {}),
+        ...todayClasses(env),
       },
       session.turns,
     );

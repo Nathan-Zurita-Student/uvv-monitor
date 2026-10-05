@@ -9,6 +9,8 @@ import { displayTitle, isAiIrrelevant } from '../agenda/focus.js';
 import type { CalendarEvent, MemoryFact, PersonalReminder } from '../assistant/types.js';
 import type { AcademicItem, ItemStatus } from '../models/academic-item.js';
 import type { NotificationReason, Reminder, TelegramBatch } from '../models/bot.js';
+import type { ClassSlot } from '../models/class-schedule.js';
+import type { PortalDocument } from '../models/portal-document.js';
 import type { TelegramButton } from '../telegram/client.js';
 import { escapeHtml, italic, truncate } from '../telegram/html.js';
 import { hasExplicitTime } from '../utils/dates.js';
@@ -46,6 +48,8 @@ export interface ScheduleData {
   calendarError?: boolean;
   memory?: MemoryFact[];
   personalReminders?: PersonalReminder[];
+  /** Quadro de Horários do Portal. */
+  classes?: ClassSlot[];
 }
 
 /** Tudo que as telas precisam saber, montado uma vez por atualização. */
@@ -57,6 +61,8 @@ export interface RenderContext {
   batch(batchId: string): TelegramBatch | undefined;
   lastSyncAt?: string;
   schedule?: ScheduleData;
+  /** Arquivos dos posts dos professores (sem o texto), para a tela de materiais. */
+  materials?: PortalDocument[];
 }
 
 export function createRenderContext(input: {
@@ -66,6 +72,7 @@ export function createRenderContext(input: {
   batches?: TelegramBatch[];
   lastSyncAt?: string;
   schedule?: ScheduleData;
+  materials?: PortalDocument[];
 }): RenderContext {
   const reminders = new Map((input.reminders ?? []).map((reminder) => [reminder.itemId, reminder]));
   const batches = new Map((input.batches ?? []).map((batch) => [batch.batchId, batch]));
@@ -77,6 +84,7 @@ export function createRenderContext(input: {
     batch: (batchId) => batches.get(batchId),
     ...(input.lastSyncAt ? { lastSyncAt: input.lastSyncAt } : {}),
     ...(input.schedule ? { schedule: input.schedule } : {}),
+    ...(input.materials ? { materials: input.materials } : {}),
   };
 }
 
@@ -496,11 +504,11 @@ export function helpText(): string {
   return [
     '🎓 <b>Seu assistente da UVV</b>',
     '',
-    'Pode conversar comigo normalmente, como com uma pessoa: “como tá minha semana?”, “tenho prova sexta?”, “o que eu faço hoje?”, “organiza meus estudos”, “me lembra da AOP amanhã às 19h”.',
+    'Pode conversar comigo normalmente, como com uma pessoa: “como tá minha semana?”, “tenho prova sexta?”, “o que eu faço hoje?”, “organiza meus estudos”, “me lembra da AOP amanhã às 19h”, “me manda o PDF da unidade 3”.',
     '',
-    'Eu acompanho o Portal, o AVA, seus e-mails da faculdade e sua Google Agenda, e te aviso do que importa.',
+    'Eu acompanho o Portal (quadro de horários, murais das matérias e arquivos dos professores), o AVA, seus e-mails e sua Google Agenda, e te aviso do que importa. Os arquivos que os professores postam chegam aqui no chat.',
     '',
-    '• Atalhos: /hoje /semana /provas /atividades /prazos /agenda /novidades /painel',
+    '• Atalhos: /hoje /semana /provas /atividades /prazos /agenda /novidades /materiais /painel',
     '• Nos avisos, use os botões pra concluir, lembrar depois ou ignorar',
     '• /gastos mostra o consumo do GPT; /esquecer limpa o contexto da conversa',
   ].join('\n');

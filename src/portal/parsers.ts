@@ -203,6 +203,123 @@ export function parseClassCards(inputs: ClassCardInput[]): PortalItem[] {
   return items;
 }
 
+function decodeEntities(value: string): string {
+  return value
+    .replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&');
+}
+
+function htmlText(html: string): string {
+  return clean(
+    decodeEntities(
+      html
+        .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+        .replace(/<br\s*\/?>|<\/p>|<\/li>/gi, '\n')
+        .replace(/<[^>]+>/g, ' '),
+    ),
+  );
+}
+
+const monthAbbreviations = [
+  'jan',
+  'fev',
+  'mar',
+  'abr',
+  'mai',
+  'jun',
+  'jul',
+  'ago',
+  'set',
+  'out',
+  'nov',
+  'dez',
+];
+
+export interface BlogTimelineEntry {
+  postId: string;
+  title: string;
+  /** Dia da publicação (YYYY-MM-DD), quando o mural informa. */
+  publishedOn?: string;
+  text: string;
+}
+
+/**
+ * Lê uma página do mural da turma (a página inicial ou o "Carregar mais…", que devolve o mesmo
+ * HTML em partes). O mural mostra só dia e mês: o ano é o mais próximo de `now` sem ficar no futuro.
+ */
+export function parseBlogTimeline(html: string, now: Date): BlogTimelineEntry[] {
+  const entries: BlogTimelineEntry[] = [];
+  const seen = new Set<string>();
+  const [yearText = '2000', monthText = '1', dayText = '1'] = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .format(now)
+    .split('-');
+  const today = `${yearText}-${monthText}-${dayText}`;
+  for (const block of html.split(/<li\b[^>]*class="[^"]*timeline[^"]*"[^>]*>/i).slice(1)) {
+    const postId = /\/Aluno\/Post\/([^"'?#<\s]+)/i.exec(block)?.[1];
+    if (!postId || seen.has(postId)) continue;
+    seen.add(postId);
+    const title = htmlText(/<h3[^>]*panel-title[^>]*>([\s\S]*?)<\/h3>/i.exec(block)?.[1] ?? '');
+    const date = /timeline-date[^>]*>\s*(\d{1,2})\s*<p>\s*([a-zç]{3})/i.exec(block);
+    let publishedOn: string | undefined;
+    const month = date?.[2] ? monthAbbreviations.indexOf(date[2].toLowerCase()) + 1 : 0;
+    if (date?.[1] && month > 0) {
+      let year = Number(yearText);
+      let candidate = isoDate(year, month, Number(date[1]));
+      if (candidate && candidate > today) {
+        year -= 1;
+        candidate = isoDate(year, month, Number(date[1]));
+      }
+      publishedOn = candidate;
+    }
+    const body = /<div[^>]*class="panel-body"[^>]*>([\s\S]*?)<a[^>]*\/Aluno\/Post\//i.exec(block);
+    entries.push({
+      postId,
+      title,
+      ...(publishedOn ? { publishedOn } : {}),
+      text: htmlText(body?.[1] ?? ''),
+    });
+  }
+  return entries;
+}
+
+export interface PostAttachment {
+  /** Identificador do arquivo no Portal (parâmetro aId). */
+  id: string;
+  name: string;
+  url: string;
+}
+
+/** Botões "Baixar Arquivo" do post (/Aluno/BaixarArquivoPost?aId=...&pId=...). */
+export function parsePostAttachments(
+  links: Array<{ text: string; href: string }>,
+): PostAttachment[] {
+  const attachments: PostAttachment[] = [];
+  for (const link of links) {
+    let url: URL;
+    try {
+      url = new URL(link.href, portalBase);
+    } catch {
+      continue;
+    }
+    if (!/\/Aluno\/BaixarArquivoPost/i.test(url.pathname)) continue;
+    const id = url.searchParams.get('aId');
+    if (!id || attachments.some((attachment) => attachment.id === id)) continue;
+    attachments.push({ id, name: clean(link.text) || 'arquivo', url: url.toString() });
+  }
+  return attachments;
+}
+
 export function parseClassPostPage(input: ClassPostPageInput): PortalItem {
   const match = /\/Aluno\/Post\/([^/?#]+)/i.exec(input.url);
   if (!match?.[1]) throw new Error(`Link de post inválido: ${input.url}`);
@@ -228,6 +345,7 @@ export function parseClassPostPage(input: ClassPostPageInput): PortalItem {
     type === 'EXAM' && /roteiro|orienta|estudo/i.test(originalTitle)
       ? `Prova — ${discipline.replace(/^\S+\s+-\s+/, '')}`
       : originalTitle;
+  const attachments = parsePostAttachments(input.attachments ?? []);
   return {
     externalId: `post:${match[1]}`,
     origin: 'CLASS_POST',
@@ -238,12 +356,19 @@ export function parseClassPostPage(input: ClassPostPageInput): PortalItem {
     type,
     ...dates,
     ...(professor ? { professor } : {}),
-    links: [input.url, ...input.links.map((link) => link.href)],
+    links: [
+      input.url,
+      ...input.links.map((link) => link.href),
+      ...attachments.map((attachment) => attachment.url),
+    ],
     metadata: {
       portalPostId: match[1],
       originalTitle,
       ...(professor ? { professor } : {}),
       relatedLinks: JSON.stringify(input.links),
+      ...(attachments.length > 0 ? { attachments: JSON.stringify(attachments) } : {}),
+      // Meio-dia local: o mural só informa o dia da publicação.
+      ...(input.publishedOn ? { receivedAt: `${input.publishedOn}T12:00:00-03:00` } : {}),
     },
   };
 }

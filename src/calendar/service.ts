@@ -1,5 +1,6 @@
 import { effectiveType, isAiIrrelevant } from '../agenda/focus.js';
 import type { AcademicItem } from '../models/academic-item.js';
+import { classOn, IN_CLASS_PATTERN, type ClassSlot } from '../models/class-schedule.js';
 import { normalizeText, stableStringify } from '../utils/normalize.js';
 import type { CalendarEventDate, CalendarEventInput, CalendarGateway } from './types.js';
 
@@ -72,13 +73,42 @@ function eventTitle(item: AcademicItem): string {
   return `[UVV] ${labels[item.type] ?? item.title} — ${subject}`;
 }
 
+/**
+ * Prova ou apresentação com dia mas sem hora: se a disciplina tem aula presencial nesse dia da
+ * semana, o horário mais provável é o da aula.
+ */
+export function classTimeFor(
+  item: AcademicItem,
+  value: string,
+  slots: readonly ClassSlot[],
+): ClassSlot | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || slots.length === 0) return undefined;
+  const text = `${item.title} ${item.description} ${item.metadata?.aiSummary ?? ''}`;
+  if (effectiveType(item) !== 'EXAM' && !IN_CLASS_PATTERN.test(text)) return undefined;
+  const weekday = new Date(`${value}T12:00:00-03:00`).getUTCDay();
+  return classOn(slots, item.discipline, weekday);
+}
+
 export function buildCalendarEvent(
   item: AcademicItem,
   detectedAt: string,
+  classSlots: readonly ClassSlot[] = [],
 ): CalendarEventInput | undefined {
   const officialValue = item.officialDeadline ?? item.officialDate;
   if (!officialValue || item.status === 'NEEDS_CONFIRMATION') return undefined;
-  const dates = eventDate(officialValue, Boolean(item.officialDeadline));
+  const classSlot = classTimeFor(item, officialValue, classSlots);
+  const dates = classSlot
+    ? {
+        start: {
+          dateTime: `${officialValue}T${classSlot.startTime}:00`,
+          timeZone: 'America/Sao_Paulo',
+        },
+        end: {
+          dateTime: `${officialValue}T${classSlot.endTime}:00`,
+          timeZone: 'America/Sao_Paulo',
+        },
+      }
+    : eventDate(officialValue, Boolean(item.officialDeadline));
   return {
     summary: eventTitle(item),
     description: [
@@ -86,6 +116,11 @@ export function buildCalendarEvent(
       `Disciplina: ${item.discipline ?? 'Não informada'}`,
       `Link da fonte: ${item.sourceUrl}`,
       `Prazo oficial: ${officialValue}`,
+      ...(classSlot
+        ? [
+            `Horário: o aviso não informou a hora; marquei no horário da aula de ${classSlot.discipline} (${classSlot.startTime}–${classSlot.endTime}), segundo o Quadro de Horários. Confirme com o professor.`,
+          ]
+        : []),
       `Identificador interno: ${item.id}`,
       `Detectado em: ${detectedAt}`,
     ].join('\n'),
@@ -101,12 +136,25 @@ export function buildCalendarEvent(
   };
 }
 
+/**
+ * O Google devolve "2026-10-14T19:10:00-03:00" para o que foi gravado como "2026-10-14T19:10:00"
+ * em America/Sao_Paulo: compara o instante, não o texto.
+ */
+function moment(value: CalendarEventDate): string {
+  if (value.date) return value.date;
+  if (!value.dateTime) return '';
+  const instant = new Date(
+    /(?:Z|[+-]\d{2}:\d{2})$/.test(value.dateTime) ? value.dateTime : `${value.dateTime}-03:00`,
+  );
+  return Number.isNaN(instant.getTime()) ? value.dateTime : String(instant.getTime());
+}
+
 function equivalent(left: CalendarEventInput, right: CalendarEventInput): boolean {
   const comparable = (event: CalendarEventInput) => ({
     summary: normalizeText(event.summary),
     description: normalizeText(event.description),
-    start: event.start,
-    end: event.end,
+    start: moment(event.start),
+    end: moment(event.end),
     itemId: event.extendedProperties.private.uvvItemId,
     contentHash: event.extendedProperties.private.uvvContentHash,
   });
@@ -116,8 +164,8 @@ function equivalent(left: CalendarEventInput, right: CalendarEventInput): boolea
 function sameVisibleEvent(left: CalendarEventInput, right: CalendarEventInput): boolean {
   return (
     normalizeText(left.summary) === normalizeText(right.summary) &&
-    stableStringify(left.start) === stableStringify(right.start) &&
-    stableStringify(left.end) === stableStringify(right.end)
+    moment(left.start) === moment(right.start) &&
+    moment(left.end) === moment(right.end)
   );
 }
 
@@ -140,8 +188,9 @@ export async function syncCalendarEvent(
   item: AcademicItem,
   dryRun: boolean,
   detectedAt = new Date().toISOString(),
+  classSlots: readonly ClassSlot[] = [],
 ): Promise<CalendarSyncResult> {
-  const desired = buildCalendarEvent(item, detectedAt);
+  const desired = buildCalendarEvent(item, detectedAt, classSlots);
   const officialValue = item.officialDeadline ?? item.officialDate;
   if (!desired || !officialValue) return { action: 'SKIPPED_UNCONFIRMED' };
   const window = searchWindow(officialValue);
