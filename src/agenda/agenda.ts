@@ -111,20 +111,32 @@ function isReliableUndated(item: AcademicItem): boolean {
   );
 }
 
-/** Une entradas que descrevem a mesma prova (mesma disciplina e dia) ou a mesma entrega. */
+function sameMinute(left: Date | undefined, right: Date | undefined): boolean {
+  return Boolean(left && right && Math.abs(left.getTime() - right.getTime()) < 60_000);
+}
+
+/**
+ * Une entradas que descrevem a mesma prova (mesma disciplina e dia) ou a mesma entrega. Um e-mail
+ * sem disciplina com o mesmo prazo exato e o mesmo assunto também é a mesma entrega.
+ */
 function mergeDuplicates(entries: AgendaEntry[]): AgendaEntry[] {
   const merged: AgendaEntry[] = [];
   for (const entry of [...entries].sort((left, right) => rank(right.item) - rank(left.item))) {
     const day = entry.due ? localDateKey(entry.due) : undefined;
     const discipline = disciplineKey(entry.item);
-    const twin = merged.find(
-      (candidate) =>
-        candidate.kind === entry.kind &&
-        (candidate.due ? localDateKey(candidate.due) : undefined) === day &&
-        disciplineKey(candidate.item) === discipline &&
-        discipline !== '' &&
-        (entry.kind === 'EXAM' || sameSubject(candidate.item, entry.item)),
-    );
+    const twin = merged.find((candidate) => {
+      if (candidate.kind !== entry.kind) return false;
+      if ((candidate.due ? localDateKey(candidate.due) : undefined) !== day) return false;
+      const other = disciplineKey(candidate.item);
+      if (other === discipline && discipline !== '') {
+        return entry.kind === 'EXAM' || sameSubject(candidate.item, entry.item);
+      }
+      return (
+        (other === '' || discipline === '') &&
+        sameMinute(candidate.due, entry.due) &&
+        sameSubject(candidate.item, entry.item)
+      );
+    });
     if (twin) twin.related.push(entry.item);
     else merged.push(entry);
   }

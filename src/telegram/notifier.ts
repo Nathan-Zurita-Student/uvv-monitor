@@ -7,9 +7,9 @@ import {
   renderItemScreen,
   renderNoticeText,
   renderSummary,
-  renderView,
   type RenderContext,
 } from '../bot/screens.js';
+import { renderView } from '../bot/views.js';
 import type { NotificationReason, TelegramBatch } from '../models/bot.js';
 import type { AcademicRepository } from '../persistence/repository.js';
 import type { DailySlot } from '../scheduler/windows.js';

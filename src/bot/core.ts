@@ -12,11 +12,11 @@ import {
   reminderKeyboard,
   renderItemScreen,
   renderPage,
-  renderView,
   type Keyboard,
   type RenderContext,
 } from './screens.js';
 import { userStatusRecord } from './status.js';
+import { renderView } from './views.js';
 import { escapeHtml } from '../telegram/html.js';
 
 /** Pedido de horário livre ("Escolher horário") aguardando a resposta do usuário. */
@@ -71,7 +71,10 @@ function instantText(action: CallbackAction): string | undefined {
       return remindMenuText;
     case 'remind':
       return action.option === 'custom' ? customReminderText : undefined;
+    case 'assist':
+      return 'Deixa comigo, já vou organizar 📚';
     case 'legacy':
+    case 'confirm':
       return undefined;
   }
 }
@@ -234,19 +237,51 @@ function handleCallback(
         { type: 'edit', messageId, ...renderItemScreen(context, item, action.screen) },
       ];
     }
+    case 'confirm':
+    case 'assist':
+      // Tratados pelo assistente no Apps Script; aqui (modo de reserva) não há GPT.
+      return [answer('Isso precisa do assistente ativo no Apps Script.')];
   }
 }
 
 const commandViews: Record<string, ViewName> = {
   painel: 'home',
   inicio: 'home',
+  menu: 'home',
+  hoje: 'today',
+  semana: 'week',
   provas: 'exams',
   atividades: 'tasks',
+  prazos: 'deadlines',
   atrasadas: 'late',
   semdata: 'nodate',
+  agenda: 'cal',
   calendario: 'cal',
   amanha: 'tomorrow',
+  novidades: 'news',
+  concluidas: 'done',
+  uvv: 'uvv',
+  assistente: 'ask',
 };
+
+/** Telas que mostram compromissos da Google Agenda (o Apps Script busca antes de desenhar). */
+const calendarViews = new Set<ViewName>(['today', 'week', 'cal', 'home']);
+
+/** O update vai desenhar uma tela que usa a Google Agenda? */
+export function needsCalendar(update: TelegramUpdate): boolean {
+  const data = update.callback_query?.data;
+  if (data) {
+    const action = decodeCallback(data);
+    return action?.type === 'view' && calendarViews.has(action.view) && action.view !== 'home';
+  }
+  const command = /^\/([a-zçãáé]+)/i
+    .exec(update.message?.text?.trim() ?? '')?.[1]
+    ?.normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+  const view = command ? commandViews[command] : undefined;
+  return view !== undefined && calendarViews.has(view) && view !== 'home';
+}
 
 function handleMessage(message: TelegramMessage, input: BotInput, now: Date): BotEffect[] {
   const text = (message.text ?? '').trim();

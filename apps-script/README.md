@@ -7,7 +7,8 @@ pedidos no Telegram. A coleta continua no GitHub Actions.
 ## Arquivos
 
 - `Code.gs`: funções de entrada (`doPost`, `processReminders`, `setupWebhook`, `webhookInfo`,
-  `sendPanel`, `refreshCache`) e o atendimento dos botões de link de mensagens antigas (`doGet`).
+  `sendPanel`, `refreshCache`, `conversationInfo`) e o atendimento dos botões de link de mensagens
+  antigas (`doGet`).
 - `Bot.gs`: gerado por `npm run build:gas` a partir de `src/bot` e `src/gas`. Não edite à mão.
 - `appsscript.json`: fuso horário, runtime V8, escopos (planilha e requisições externas) e Web App.
 
@@ -67,46 +68,49 @@ Use `webhookInfo` para conferir a situação (`pending_update_count`, `last_erro
 
 Nunca coloque os valores das propriedades no repositório.
 
-## Conversa com GPT
+## Assistente com GPT
 
-O webhook atende mensagens livres com `gpt-5.4-mini`, usando as atividades da planilha e as
-últimas três trocas da conversa (expiram após 48 horas). O Gemini continua nas análises automáticas
-do monitor. Exemplos:
+O webhook atende mensagens livres com `gpt-5.4-mini` usando ferramentas (`src/assistant`): o
+modelo decide o que consultar (Google Agenda, atividades, provas, Gmail, novidades do AVA, horários
+livres, memória) e só recebe o necessário para cada pergunta. As análises automáticas do monitor
+continuam com o Gemini.
 
-- “O que eu preciso fazer essa semana?”
-- “Marca na minha agenda dia nove deste mês, às 14h, como urgente, para revisar capítulos 1 e 2.”
-- “Me lembra de resolver essa atividade amanhã às 9h.”
-- “Já terminei a atividade UVV-ABC123, marca como concluída.”
+Agenda e Gmail são acessados pela API REST com a autorização Google que o monitor já tem (Gmail
+somente leitura, Agenda e Planilhas), sincronizada pela ação **Configurar conversa do Telegram** ou
+por `node --env-file=.env scripts/configure-telegram-chat.mjs`. Nenhum escopo novo é pedido ao Apps
+Script. O script envia só para o webhook autenticado e não imprime valores.
 
-Quando faltar assunto, data ou horário, o bot pergunta. Lembretes solicitados para a agenda viram
-eventos pessoais no Google Calendar (30 minutos por padrão), com descrição do que fazer e destaque
-vermelho quando urgentes. Todo lembrete também envia uma mensagem no Telegram pelo acionador
-`processReminders` (até 5 minutos após o horário). Uma entrega repetida do mesmo update não cria
-outro evento. O bot confirma apenas depois de gravar o evento e o lembrete.
+Como funciona cada mensagem:
 
-Depois de publicar a nova versão de `Bot.gs` e `Code.gs`, execute no GitHub Actions o workflow
-**Configurar conversa do Telegram**. Ele sincroniza a autorização Google já existente e, se
-cadastrada, a chave `OPENAI_API_KEY`, pelo webhook autenticado. Não imprime os valores. Não exige
-novos escopos no Apps Script. Se a chave ainda não existir, cadastre o secret `OPENAI_API_KEY` no
-GitHub e rode esse workflow novamente, ou adicione a propriedade diretamente no Apps Script.
+1. O update é marcado como visto (sem chamadas duplicadas) e o Telegram mostra "digitando…".
+2. O assistente roda fora do lock principal, então os botões continuam rápidos enquanto ele pensa.
+3. Até 5 rodadas modelo ⇄ ferramentas; a última obriga uma resposta. Erros de ferramenta voltam ao
+   modelo como mensagem e erros 5xx da OpenAI têm uma nova tentativa.
+4. A resposta vai em texto simples. Ações de alterar/remover evento ou cancelar lembrete chegam com
+   **✅ Confirmar / ✖️ Cancelar**; "sim" ou "não" também resolvem, sem nova chamada ao GPT.
+5. O histórico curto (6 mensagens, 48 h, com os itens citados) fica em `GPT_CHAT_HISTORY`.
+
+Abas usadas: `personal_reminders` (lembretes pedidos na conversa), `assistant_memory` (memória) e
+`assistant_log` (uma linha por conversa: pergunta sem dados sensíveis, ferramentas, rodadas, modelo,
+tokens, custo, tempo e resultado). São criadas automaticamente.
+
+O acionador `processReminders` (5 minutos) envia os lembretes pessoais e, uma vez por dia a partir
+de `ASSISTANT_PROACTIVE_HOUR`, o aviso proativo mais importante que ainda não foi dado.
 
 Propriedades opcionais no Apps Script:
 
-| Propriedade                   | Padrão | Efeito                                  |
-| ----------------------------- | ------ | --------------------------------------- |
-| `GPT_CHAT_ENABLED`            | `true` | `false` pausa só a conversa GPT         |
-| `GPT_CHAT_MONTHLY_BUDGET_USD` | `2.5`  | Teto mensal de gasto do bot, em dólares |
-| `GPT_CHAT_MAX_CALLS_PER_DAY`  | `30`   | Máximo de pedidos ao GPT por dia local  |
+| Propriedade                   | Padrão         | Efeito                                               |
+| ----------------------------- | -------------- | ---------------------------------------------------- |
+| `GPT_CHAT_ENABLED`            | `true`         | `false` pausa só a conversa                          |
+| `GPT_MODEL`                   | `gpt-5.4-mini` | Modelo da OpenAI                                     |
+| `GPT_REASONING_EFFORT`        | `low`          | `none` é mais rápido; `medium` pensa mais            |
+| `GPT_CHAT_MONTHLY_BUDGET_USD` | `2.5`          | Teto mensal de gasto do bot, em dólares              |
+| `GPT_CHAT_MAX_CALLS_PER_DAY`  | `40`           | Máximo de conversas por dia local                    |
+| `ASSISTANT_PROACTIVE`         | `true`         | `false` desliga o aviso proativo diário              |
+| `ASSISTANT_PROACTIVE_HOUR`    | `9`            | Hora local a partir da qual o aviso pode ser enviado |
+| `GOOGLE_CALENDAR_ID`          | `primary`      | Agenda consultada e usada para criar eventos         |
 
-`/gastos` mostra o consumo estimado/medido do bot, sem consultar o saldo da OpenAI. O bot reserva
-um teto conservador antes de cada chamada e ajusta pelo consumo retornado; falhas sem informação
-de consumo mantêm a reserva. Ao atingir um limite, comandos, botões e lembretes continuam ativos.
-`/esquecer` apaga a memória da conversa; `/cancelar` também encerra a escolha de horário pendente.
-Esses comandos não consomem tokens nem apagam lembretes já criados.
-
-Execute `conversationInfo` no editor para conferir chave presente, modelo e orçamento sem expor
-credenciais ou gastar créditos. As abas `personal_reminders` e `conversation_operations` são
-criadas automaticamente. O GPT propõe apenas responder, criar lembrete ou mudar status; não recebe
-acesso para apagar eventos, mudar prazos oficiais ou enviar mensagens a terceiros. Mensagens de
-outros chats são recusadas antes de consultar a IA. A conversa imediata requer o webhook: o modo
-de reserva `getUpdates` continua atendendo os comandos tradicionais.
+`/gastos` mostra o consumo medido pelo bot (não consulta o saldo da OpenAI). O bot reserva um teto
+antes de cada chamada e acerta pelo consumo real. `/esquecer` apaga o contexto da conversa. Execute
+`conversationInfo` no editor para conferir chave, Google, modelo, orçamento e uso sem expor
+credenciais nem gastar créditos.

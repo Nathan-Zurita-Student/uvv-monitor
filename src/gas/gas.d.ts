@@ -10,6 +10,7 @@ declare namespace GasSheets {
     getRange(row: number, column: number, rows: number, columns: number): Range;
     appendRow(values: string[]): Sheet;
     getLastRow(): number;
+    deleteRow(row: number): Sheet;
   }
   interface Spreadsheet {
     getSheetByName(name: string): Sheet | null;
@@ -19,17 +20,24 @@ declare namespace GasSheets {
 
 declare const SpreadsheetApp: { openById(id: string): GasSheets.Spreadsheet };
 
+declare namespace GasFetch {
+  interface Params {
+    method: 'post' | 'get' | 'patch' | 'delete';
+    contentType?: string;
+    payload?: string;
+    muteHttpExceptions?: boolean;
+    headers?: Record<string, string>;
+  }
+  interface Response {
+    getResponseCode(): number;
+    getContentText(): string;
+  }
+}
+
 declare const UrlFetchApp: {
-  fetch(
-    url: string,
-    params: {
-      method: 'post' | 'get';
-      contentType?: string;
-      payload?: string;
-      muteHttpExceptions?: boolean;
-      headers?: Record<string, string>;
-    },
-  ): { getResponseCode(): number; getContentText(): string };
+  fetch(url: string, params: GasFetch.Params): GasFetch.Response;
+  /** Várias requisições em paralelo. */
+  fetchAll(requests: Array<GasFetch.Params & { url: string }>): GasFetch.Response[];
 };
 
 declare const CacheService: {
@@ -46,7 +54,7 @@ declare const CacheService: {
 declare namespace GasUtilities {
   interface Blob {
     getBytes(): number[];
-    getDataAsString(): string;
+    getDataAsString(charset?: string): string;
   }
 }
 
@@ -56,6 +64,8 @@ declare const Utilities: {
   ungzip(blob: GasUtilities.Blob): GasUtilities.Blob;
   base64Encode(data: number[]): string;
   base64Decode(encoded: string): number[];
+  base64DecodeWebSafe(encoded: string): number[];
+  sleep(milliseconds: number): void;
 };
 
 declare const LockService: {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureConversation, conversationCalendarToken } from '../../src/gas/configuration.js';
+import { configureConversation } from '../../src/gas/configuration.js';
+import { googleAccessToken } from '../../src/gas/google-api.js';
 
 let values: Map<string, string>;
 let cache: Map<string, string>;
@@ -26,6 +27,7 @@ beforeEach(() => {
       get: (key: string) => cache.get(key) ?? null,
       put: (key: string, value: string) => cache.set(key, value),
       remove: (key: string) => cache.delete(key),
+      removeAll: (keys: string[]) => keys.forEach((key) => cache.delete(key)),
     }),
   });
   fetcher = vi.fn().mockReturnValue({
@@ -64,8 +66,8 @@ describe('configuração segura da conversa', () => {
       GOOGLE_CLIENT_SECRET: 'secret',
       GOOGLE_REFRESH_TOKEN: 'refresh',
     });
-    expect(conversationCalendarToken()).toBe('access-test');
-    expect(conversationCalendarToken()).toBe('access-test');
+    expect(googleAccessToken()).toBe('access-test');
+    expect(googleAccessToken()).toBe('access-test');
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0]?.[0]).toBe('https://oauth2.googleapis.com/token');
     expect(fetcher.mock.calls[0]?.[1].payload).toContain('grant_type=refresh_token');
@@ -78,7 +80,7 @@ describe('configuração segura da conversa', () => {
       GOOGLE_REFRESH_TOKEN: 'refresh',
     });
     fetcher.mockReturnValue({ getResponseCode: () => 400, getContentText: () => '{}' });
-    expect(() => conversationCalendarToken()).toThrow('recusada');
+    expect(() => googleAccessToken()).toThrow('recusada');
     expect(cache.size).toBe(0);
   });
 });

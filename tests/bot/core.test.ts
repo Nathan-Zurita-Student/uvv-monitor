@@ -177,7 +177,7 @@ describe('painel e novidades', () => {
   it('navega pelo menu editando a mesma mensagem', () => {
     const effects = click({ type: 'view', view: 'tasks', refresh: false });
     const edit = find(effects, 'edit');
-    expect(edit?.text).toContain('✍️ <b>Atividades</b>');
+    expect(edit?.text).toContain('📝 <b>Atividades</b>');
     expect(edit?.keyboard.flat().map((button) => button.text)).toContain('⬅️ Voltar');
   });
 

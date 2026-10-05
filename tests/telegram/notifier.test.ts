@@ -63,7 +63,7 @@ describe('envio das mensagens agendadas', () => {
     });
     expect(telegram.sent).toHaveLength(1);
     const [card] = telegram.sent;
-    expect(card?.text).toContain('✍️ <b>AOP 03 — Aspectos Legais</b>');
+    expect(card?.text).toContain('📝 <b>AOP 03 — Aspectos Legais</b>');
     expect(card?.text).not.toContain(aop.id);
     const buttons = card?.options.inlineKeyboard?.flat() ?? [];
     expect(buttons.filter((button) => 'url' in button).map((button) => button.text)).toEqual([

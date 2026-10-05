@@ -1,6 +1,21 @@
 import type { ItemStatus } from '../models/academic-item.js';
 
-export const viewNames = ['home', 'exams', 'tasks', 'late', 'nodate', 'cal', 'tomorrow'] as const;
+export const viewNames = [
+  'home',
+  'exams',
+  'tasks',
+  'late',
+  'nodate',
+  'cal',
+  'tomorrow',
+  'today',
+  'week',
+  'deadlines',
+  'done',
+  'news',
+  'uvv',
+  'ask',
+] as const;
 export type ViewName = (typeof viewNames)[number];
 
 export const cardContexts = ['new', 'date', 'changed', 'urgent', 'reminder'] as const;
@@ -24,7 +39,14 @@ export type CallbackAction =
   | { type: 'view'; view: ViewName; refresh: boolean }
   | { type: 'page'; batchId: string; index: number }
   | { type: 'noop' }
-  | { type: 'legacy'; itemId: string; status: ItemStatus };
+  | { type: 'legacy'; itemId: string; status: ItemStatus }
+  /** Confirmação de uma ação do assistente (alterar/remover evento, cancelar lembrete). */
+  | { type: 'confirm'; actionId: string; accept: boolean }
+  /** Pede ao assistente uma ajuda ligada à atividade (ex.: organizar o estudo para a prova). */
+  | { type: 'assist'; itemId: string; intent: AssistIntent };
+
+export const assistIntents = ['study'] as const;
+export type AssistIntent = (typeof assistIntents)[number];
 
 const statusCodes: Record<ItemStatus, string> = {
   TODO: 'T',
@@ -105,6 +127,12 @@ export function encodeCallback(action: CallbackAction): string {
     case 'legacy':
       value = `task:${action.itemId}:${action.status}`;
       break;
+    case 'confirm':
+      value = `cf|${action.actionId}|${action.accept ? 'y' : 'n'}`;
+      break;
+    case 'assist':
+      value = `as|${action.itemId}|${action.intent}`;
+      break;
   }
   // Todos os campos são ASCII, então caracteres = bytes.
   if (value.length > 64) {
@@ -134,7 +162,13 @@ export function decodeCallback(data: string): CallbackAction | undefined {
   if (code === 'p' && /^[A-Za-z0-9]{4,12}$/.test(first) && /^-?\d{1,3}$/.test(second)) {
     return { type: 'page', batchId: first, index: Number(second) };
   }
+  if (code === 'cf' && /^[a-z0-9]{6,16}$/.test(first) && ['y', 'n'].includes(second)) {
+    return { type: 'confirm', actionId: first, accept: second === 'y' };
+  }
   if (!itemIdPattern.test(first)) return undefined;
+  if (code === 'as' && (assistIntents as readonly string[]).includes(second)) {
+    return { type: 'assist', itemId: first, intent: second as AssistIntent };
+  }
   const screen = decodeScreen(third);
   if (!screen) return undefined;
   if (code === 's') {

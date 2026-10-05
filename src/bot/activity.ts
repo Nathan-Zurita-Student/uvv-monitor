@@ -72,8 +72,8 @@ export function itemLabel(item: AcademicItem): string {
 }
 
 export function itemIcon(entryKind: AgendaEntry['kind'] | undefined): string {
-  if (entryKind === 'EXAM') return '📝';
-  if (entryKind === 'TASK') return '✍️';
+  if (entryKind === 'EXAM') return '📚';
+  if (entryKind === 'TASK') return '📝';
   return '📌';
 }
 

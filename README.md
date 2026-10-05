@@ -1,8 +1,9 @@
 # uvv-monitor
 
-Assistente acadêmico pessoal para Portal do Aluno UVV, Gmail, Google Calendar, Google Sheets e
-Telegram. Executa automaticamente no GitHub Actions, mantém histórico e estado das tarefas e não
-depende de API paga de IA.
+Assistente acadêmico pessoal para Portal do Aluno UVV, AVA, Gmail, Google Calendar, Google Sheets e
+Telegram. A coleta roda automaticamente no GitHub Actions e o bot conversa em linguagem natural pelo
+Telegram, com o GPT como "cérebro" que consulta agenda, atividades, e-mails e memória por meio de
+ferramentas. Sem chave da OpenAI, botões, comandos, avisos e lembretes continuam funcionando.
 
 ## Estado do projeto
 
@@ -14,6 +15,8 @@ depende de API paga de IA.
 - Hash, deduplicação entre posts/calendário, mudanças de prazo, prioridade, tarefas interativas,
   resumos e scheduler implementados.
 - Webhook opcional e gratuito em Google Apps Script para botões inline com resposta imediata.
+- Assistente com GPT e ferramentas (agenda, atividades, provas, Gmail, AVA, lembretes, memória,
+  horários livres e prioridades), proativo e com confirmação antes de alterar ou apagar algo.
 - GitHub Actions configurado para 12h, 17h e 21h em `America/Sao_Paulo`.
 - `DRY_RUN=true` é o padrão.
 
@@ -109,8 +112,75 @@ urgência ou um lembrete pedido. A assinatura de cada aviso fica na aba `notific
 - **⏰ Lembrar** abre: 30 min, 1 hora, hoje à noite, amanhã cedo, 1 dia antes ou um horário
   escrito livremente ("18:30", "amanhã 9h", "15/10 14h", "em 2 horas").
 - **📖 Abrir** leva à atividade original.
-- `/painel` abre o menu: Provas, Atividades, Atrasadas, Sem data, Calendário e Atualizar, com
-  ⬅️ Voltar em cada tela.
+- `/painel` abre o menu: 📅 Hoje, 📆 Semana, 📝 Atividades, 📚 Provas, ⏰ Prazos, ✅ Concluídas,
+  📩 Novidades, 🎓 UVV, ⚠️ Atrasadas, 📌 Sem data, 🤖 Perguntar ao assistente e 🔄 Atualizar, com
+  ⬅️ Voltar em cada tela. Hoje e Semana juntam a Google Agenda, as aulas que você contou ao
+  assistente, os lembretes e o que vence, sem duplicar o que aparece em mais de uma fonte.
+- Atalhos opcionais: `/hoje`, `/semana`, `/provas`, `/atividades`, `/prazos`, `/agenda`,
+  `/novidades`, `/concluidas`, `/uvv`. Tudo isso também funciona escrevendo normalmente.
+
+### Assistente (conversa natural)
+
+Qualquer mensagem que não seja comando vai para o assistente, que responde como uma pessoa:
+
+> **Você:** chat, como tá minha semana?
+> **Bot:** Essa semana o mais importante é a prova de Linguagens Formais na segunda. Terça e quarta
+> estão tranquilas, então eu usaria um desses dias para adiantar a AOP 03, que vence dia 13.
+> **Você:** coloca um horário de estudo pra prova amanhã às 14h
+> **Bot:** Coloquei das 14h às 15h30 na sua Agenda.
+
+Ele entende datas como "amanhã", "sexta que vem", "dia 15" ou "depois da aula" no fuso
+`America/Sao_Paulo`, mantém o contexto entre mensagens ("que horas?", "me lembra dois dias antes")
+e só usa listas quando fazem sentido.
+
+```text
+Telegram → webhook (Apps Script) → assistente (src/assistant/agent.ts) ⇄ GPT
+                                      └─ ferramentas (src/assistant/tools.ts)
+                                          ├─ Google Agenda (consultar, criar, alterar, remover)
+                                          ├─ Gmail (buscar e ler, somente leitura)
+                                          ├─ Portal/AVA/e-mails já coletados (planilha)
+                                          ├─ prioridades, alertas, conflitos e horários livres
+                                          ├─ lembretes no Telegram
+                                          └─ memória (aulas, professores, preferências)
+```
+
+- **Ferramentas, não contexto gigante:** o GPT recebe só a data, a memória curta e alertas; ele
+  decide o que consultar (`get_calendar_events`, `get_academic_tasks`, `get_upcoming_exams`,
+  `get_class_schedule`, `get_academic_context`, `get_free_time`, `get_ava_updates`,
+  `search_gmail`, `read_email`, `create_calendar_event`, `update_calendar_event`,
+  `delete_calendar_event`, `create_reminder`, `cancel_reminder`, `mark_task_completed`,
+  `save_memory`, `forget_memory`).
+- **Contexto acadêmico central** (`src/assistant/catalog.ts`, `timeline.ts`): provas, trabalhos,
+  AOPs, exercícios, aulas, apresentações, seminários, entregas, estágio, documentos, avisos e
+  pendências vindos do Portal, do AVA, do Gmail, da Agenda e do Telegram ficam numa visão só. O
+  evento que o monitor criou para uma prova é a própria prova; um compromisso seu com o mesmo
+  assunto no mesmo dia vira uma observação no item; um e-mail com o mesmo prazo de uma atividade do
+  AVA é unido a ela.
+- **Fontes:** em caso de conflito vale, nesta ordem: o que você confirmou, a Google Agenda,
+  Portal/AVA, e-mail e, por último, o que a IA inferiu. O assistente avisa quando há divergência e
+  nunca inventa datas ou horários ("horário não informado").
+- **Prioridades e planejamento** (`src/assistant/insights.ts`, `free-time.ts`): prazo, tipo
+  (prova pesa mais), pontos, atraso e acúmulo de prazos viram uma ordem com motivos; os horários
+  livres descontam aulas, compromissos e provas.
+- **Ações com segurança:** criar evento, lembrete, marcar atividade e salvar memória são feitos na
+  hora. Alterar ou remover evento e cancelar lembrete só acontecem depois de **✅ Confirmar** (ou
+  "sim"). Eventos sincronizados do Portal não são editados pelo assistente. Conteúdo de e-mails e
+  avisos é tratado como informação, nunca como instrução.
+- **Memória útil** (aba `assistant_memory`): horários de aula, disciplinas, professores,
+  preferências e coisas que você pediu para lembrar. "Já fiz essa prova" marca a atividade como
+  concluída, e ela para de gerar avisos.
+- **Proativo sem exagero:** no máximo um aviso por dia, a partir das 9h, quando há algo acionável
+  (prova chegando sem estudo marcado, entrega vencendo pendente, duas entregas no mesmo dia,
+  compromissos sobrepostos), com botões como **📚 Organizar estudo**. Na conversa, um alerta ainda
+  não mencionado pode aparecer como "Aliás, ...".
+- **Custo:** cerca de US$ 0,002 a 0,005 por mensagem com `gpt-5.4-mini` (o prompt fixo e as
+  ferramentas ficam em cache na OpenAI). O teto padrão é US$ 2,50 por mês e 40 conversas por dia;
+  botões e telas não usam GPT. `/gastos` mostra o consumo.
+- **Logs** (aba `assistant_log`): pergunta (sem e-mails, números longos ou chaves), ferramentas
+  chamadas, rodadas, modelo, tokens, custo, tempo e resultado. Os mesmos dados vão para os logs de
+  execução do Apps Script. Chaves e tokens nunca são registrados.
+
+Configuração e propriedades: [`apps-script/README.md`](apps-script/README.md#assistente-com-gpt).
 
 ### Status
 
@@ -122,8 +192,9 @@ exceção é o próprio AVA confirmar a conclusão.
 ### Arquitetura do bot
 
 ```text
+src/assistant/  assistente: contexto acadêmico, linha do tempo, prioridades, ferramentas, agente
 src/bot/        núcleo puro: telas, botões (callbacks), lembretes, prioridade e notificações
-src/gas/        adaptador do Google Apps Script (webhook, planilha, lembretes)
+src/gas/        adaptador do Google Apps Script (webhook, cache, Agenda/Gmail via REST, GPT)
 apps-script/    Code.gs (entradas) + Bot.gs (gerado por npm run build:gas)
 ```
 
@@ -212,10 +283,9 @@ AI_MAX_INPUT_CHARS       # máximo de texto por item; padrão: 20000
 
 ## Interpretação opcional por IA
 
-A conversa livre pelo Telegram usa GPT separadamente, no webhook do Apps Script: entende pedidos
-de lembretes, cria compromissos pessoais na agenda e responde sobre as pendências. O custo é limitado
-a US$ 2,50 por mês e 30 pedidos por dia por padrão. Veja [configuração da conversa](apps-script/README.md#conversa-com-gpt).
-Isso não ativa revisão das análises automáticas por dois modelos; a coleta mantém o provedor escolhido.
+A conversa pelo Telegram usa GPT separadamente, no webhook do Apps Script (veja
+[Assistente](#assistente-conversa-natural)). As análises automáticas da coleta continuam com o
+provedor escolhido abaixo.
 
 O monitor funciona integralmente sem IA. Quando `AI_ENABLED=true`, itens novos ou alterados são
 transformados em uma explicação simples contendo o que fazer, o que estudar, materiais mencionados
@@ -259,7 +329,7 @@ API estiver indisponível ou atingir a cota, a execução continua com as mesmas
 análise. Antes da chamada, e-mails, identificadores numéricos longos e possíveis segredos são
 removidos.
 
-Nenhuma API de IA é necessária.
+Nenhuma API de IA é necessária para a coleta, os avisos e os botões.
 
 ## Execução local
 

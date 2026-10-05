@@ -9,7 +9,7 @@ function header(headers: GmailHeader[] | undefined, name: string): string {
   return headers?.find((item) => item.name.toLowerCase() === name.toLowerCase())?.value ?? '';
 }
 
-function htmlToText(html: string): string {
+export function htmlToText(html: string): string {
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -22,10 +22,13 @@ function htmlToText(html: string): string {
     .replace(/&gt;/gi, '>');
 }
 
+type Decoder = (data: string) => string;
+
 function walkParts(
   part: GmailPart,
   texts: string[],
   attachments: ParsedGmailMessage['attachments'],
+  decode: Decoder,
 ): void {
   if (part.filename) {
     attachments.push({
@@ -36,16 +39,20 @@ function walkParts(
     });
   }
   if (part.body?.data && (part.mimeType === 'text/plain' || part.mimeType === 'text/html')) {
-    const decoded = decodeBase64Url(part.body.data);
+    const decoded = decode(part.body.data);
     texts.push(part.mimeType === 'text/html' ? htmlToText(decoded) : decoded);
   }
-  for (const child of part.parts ?? []) walkParts(child, texts, attachments);
+  for (const child of part.parts ?? []) walkParts(child, texts, attachments, decode);
 }
 
-export function parseGmailMessage(message: GmailRawMessage): ParsedGmailMessage {
+/** `decode` troca o Buffer do Node pelo decodificador do Apps Script. */
+export function parseGmailMessage(
+  message: GmailRawMessage,
+  decode: Decoder = decodeBase64Url,
+): ParsedGmailMessage {
   const texts: string[] = [];
   const attachments: ParsedGmailMessage['attachments'] = [];
-  if (message.payload) walkParts(message.payload, texts, attachments);
+  if (message.payload) walkParts(message.payload, texts, attachments, decode);
   const headers = message.payload?.headers;
   const body = texts
     .join('\n')

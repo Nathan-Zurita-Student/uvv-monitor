@@ -2,27 +2,21 @@ import {
   buildAgenda,
   findEntry,
   toAgendaEntry,
-  upcoming,
   type Agenda,
   type AgendaEntry,
 } from '../agenda/agenda.js';
 import { displayTitle, isAiIrrelevant } from '../agenda/focus.js';
+import type { CalendarEvent, MemoryFact, PersonalReminder } from '../assistant/types.js';
 import type { AcademicItem, ItemStatus } from '../models/academic-item.js';
 import type { NotificationReason, Reminder, TelegramBatch } from '../models/bot.js';
 import type { TelegramButton } from '../telegram/client.js';
 import { escapeHtml, italic, truncate } from '../telegram/html.js';
-import {
-  ACADEMIC_TIMEZONE,
-  hasExplicitTime,
-  localDateKey,
-  parseAcademicDate,
-} from '../utils/dates.js';
+import { hasExplicitTime } from '../utils/dates.js';
 import {
   activityFacts,
   clock,
   countdownLine,
   dayMonth,
-  itemIcon,
   itemLabel,
   naturalSentence,
   shortDiscipline,
@@ -43,6 +37,17 @@ export interface Rendered {
   keyboard: Keyboard;
 }
 
+/**
+ * Agenda pessoal usada nas telas Hoje/Semana. O Apps Script preenche; sem ela (monitor no Node),
+ * as telas mostram só o que veio do Portal, AVA e e-mails.
+ */
+export interface ScheduleData {
+  events?: CalendarEvent[];
+  calendarError?: boolean;
+  memory?: MemoryFact[];
+  personalReminders?: PersonalReminder[];
+}
+
 /** Tudo que as telas precisam saber, montado uma vez por atualização. */
 export interface RenderContext {
   now: Date;
@@ -51,6 +56,7 @@ export interface RenderContext {
   reminderFor(itemId: string): Reminder | undefined;
   batch(batchId: string): TelegramBatch | undefined;
   lastSyncAt?: string;
+  schedule?: ScheduleData;
 }
 
 export function createRenderContext(input: {
@@ -59,6 +65,7 @@ export function createRenderContext(input: {
   reminders?: Reminder[];
   batches?: TelegramBatch[];
   lastSyncAt?: string;
+  schedule?: ScheduleData;
 }): RenderContext {
   const reminders = new Map((input.reminders ?? []).map((reminder) => [reminder.itemId, reminder]));
   const batches = new Map((input.batches ?? []).map((batch) => [batch.batchId, batch]));
@@ -69,6 +76,7 @@ export function createRenderContext(input: {
     reminderFor: (itemId) => reminders.get(itemId),
     batch: (batchId) => batches.get(batchId),
     ...(input.lastSyncAt ? { lastSyncAt: input.lastSyncAt } : {}),
+    ...(input.schedule ? { schedule: input.schedule } : {}),
   };
 }
 
@@ -92,7 +100,7 @@ export function entryFor(context: RenderContext, item: AcademicItem): AgendaEntr
 // ---------------------------------------------------------------------------------------------
 // Pedaços de texto
 
-function relativeDue(entry: AgendaEntry, now: Date): string {
+export function relativeDue(entry: AgendaEntry, now: Date): string {
   const days = entry.days ?? 0;
   if (entry.kind === 'TASK' && entry.due && entry.due.getTime() < now.getTime()) {
     if (days === 0) return 'venceu hoje';
@@ -103,7 +111,7 @@ function relativeDue(entry: AgendaEntry, now: Date): string {
   return `faltam ${String(days)} dias`;
 }
 
-function shortDate(entry: AgendaEntry): string {
+export function shortDate(entry: AgendaEntry): string {
   return entry.date ? whenText(entry.date.value, entry.date.deadline || entry.kind === 'TASK') : '';
 }
 
@@ -328,12 +336,12 @@ export function reminderKeyboard(
   return rows;
 }
 
-const viewButton = (text: string, view: ViewName, refresh = false): TelegramButton => ({
+export const viewButton = (text: string, view: ViewName, refresh = false): TelegramButton => ({
   text,
   callback_data: encodeCallback({ type: 'view', view, refresh }),
 });
 
-const backToHome: TelegramButton[] = [viewButton('⬅️ Voltar', 'home')];
+export const backToHome: TelegramButton[] = [viewButton('⬅️ Voltar', 'home')];
 
 // ---------------------------------------------------------------------------------------------
 // Tela de um item (cartão, página de novidades ou detalhe aberto pelo painel)
@@ -381,7 +389,7 @@ export function renderItemScreen(
 // ---------------------------------------------------------------------------------------------
 // Resumo de novidades e navegação ⬅️ 1/3 ➡️
 
-function plural(count: number, singular: string, pluralForm: string): string {
+export function plural(count: number, singular: string, pluralForm: string): string {
   return `${String(count)} ${count === 1 ? singular : pluralForm}`;
 }
 
@@ -484,193 +492,16 @@ export function renderPage(
   };
 }
 
-// ---------------------------------------------------------------------------------------------
-// Painel em menu
-
-function longToday(now: Date): string {
-  const parts = new Intl.DateTimeFormat('pt-BR', {
-    timeZone: ACADEMIC_TIMEZONE,
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-  }).formatToParts(now);
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((candidate) => candidate.type === type)?.value ?? '';
-  const weekday = part('weekday');
-  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${part('day')} de ${part('month')}`;
-}
-
-function listLine(entry: AgendaEntry, now: Date): string {
-  const status = entry.item.status === 'TODO' ? '' : ` · ${statusLabels[entry.item.status]}`;
-  const when = entry.date
-    ? `${escapeHtml(shortDate(entry))} · ${relativeDue(entry, now)}`
-    : 'sem data';
-  return `${itemIcon(entry.kind)} <b>${escapeHtml(itemLabel(entry.item))}</b>\n${when}${status}`;
-}
-
-function itemButtons(entries: AgendaEntry[], from: ViewName, limit = 6): Keyboard {
-  return entries.slice(0, limit).map((entry) => [
-    {
-      text: `${itemIcon(entry.kind)} ${truncate(itemLabel(entry.item), 32)}${entry.due ? ` · ${dayMonth(entry.due)}` : ''}`,
-      callback_data: encodeCallback({
-        type: 'item',
-        itemId: entry.item.id,
-        screen: { kind: 'detail', from },
-      }),
-    },
-  ]);
-}
-
-function moreLine(total: number, shown: number): string[] {
-  return total > shown ? ['', italic(`+ ${plural(total - shown, 'item', 'itens')}`)] : [];
-}
-
-const homeMenu = (agenda: Agenda): Keyboard => [
-  [
-    viewButton(
-      `📝 Provas${agenda.exams.length ? ` (${String(agenda.exams.length)})` : ''}`,
-      'exams',
-    ),
-    viewButton(
-      `✍️ Atividades${agenda.tasks.length ? ` (${String(agenda.tasks.length)})` : ''}`,
-      'tasks',
-    ),
-  ],
-  [
-    viewButton(
-      `⚠️ Atrasadas${agenda.overdue.length ? ` (${String(agenda.overdue.length)})` : ''}`,
-      'late',
-    ),
-    viewButton(
-      `📌 Sem data${agenda.undated.length ? ` (${String(agenda.undated.length)})` : ''}`,
-      'nodate',
-    ),
-  ],
-  [viewButton('📅 Calendário', 'cal'), viewButton('🔄 Atualizar', 'home', true)],
-];
-
-export function renderView(context: RenderContext, view: ViewName): Rendered {
-  const { agenda, now } = context;
-  if (view === 'home') {
-    const next = upcoming(agenda, 60).slice(0, 5);
-    const lines = ['🎓 <b>Sua faculdade</b>', escapeHtml(longToday(now)), ''];
-    if (next.length > 0) {
-      lines.push('🔥 <b>Próximos</b>');
-      for (const entry of next) {
-        lines.push(`${itemIcon(entry.kind)} ${escapeHtml(itemLabel(entry.item))}`);
-        lines.push(`${entry.due ? dayMonth(entry.due) : ''} · ${relativeDue(entry, now)}`);
-      }
-    } else {
-      lines.push('✨ Nenhuma prova ou entrega pela frente.');
-    }
-    if (agenda.overdue.length > 0) {
-      lines.push(
-        '',
-        `⚠️ ${plural(agenda.overdue.length, 'atividade aparece', 'atividades aparecem')} como ${agenda.overdue.length === 1 ? 'atrasada' : 'atrasadas'}`,
-      );
-    }
-    return { text: lines.join('\n'), keyboard: homeMenu(agenda) };
-  }
-  if (view === 'exams') {
-    const lines = ['📝 <b>Provas</b>', ''];
-    if (agenda.exams.length === 0) lines.push('Nenhuma prova marcada por enquanto. 🎉');
-    lines.push(...agenda.exams.slice(0, 8).flatMap((entry) => [listLine(entry, now), '']));
-    lines.push(...moreLine(agenda.exams.length, 8));
-    if (agenda.conditionalExams.length > 0) {
-      lines.push(`🔁 <b>2ª chamada e finais</b> ${italic('(só se precisar)')}`);
-      lines.push(
-        ...agenda.conditionalExams
-          .slice(0, 6)
-          .map(
-            (entry) =>
-              `${entry.due ? dayMonth(entry.due) : ''} · ${escapeHtml(itemLabel(entry.item))}`,
-          ),
-      );
-    }
-    return {
-      text: lines.join('\n').trim(),
-      keyboard: [...itemButtons(agenda.exams, 'exams'), backToHome],
-    };
-  }
-  if (view === 'tasks' || view === 'late' || view === 'nodate') {
-    const config = {
-      tasks: {
-        title: '✍️ <b>Atividades</b>',
-        entries: agenda.tasks,
-        empty: 'Nenhuma entrega com prazo pela frente. 🎉',
-      },
-      late: { title: '⚠️ <b>Atrasadas</b>', entries: agenda.overdue, empty: 'Nada atrasado. 👏' },
-      nodate: {
-        title: '📌 <b>Sem data definida</b>',
-        entries: agenda.undated,
-        empty: 'Tudo tem data definida.',
-      },
-    }[view];
-    const lines = [config.title, ''];
-    if (config.entries.length === 0) lines.push(config.empty);
-    lines.push(...config.entries.slice(0, 8).flatMap((entry) => [listLine(entry, now), '']));
-    lines.push(...moreLine(config.entries.length, 8));
-    if (view === 'late' && config.entries.length > 0) {
-      lines.push(italic('Se já entregou, toque na atividade e marque como concluída.'));
-    }
-    return {
-      text: lines.join('\n').trim(),
-      keyboard: [...itemButtons(config.entries, view), backToHome],
-    };
-  }
-  if (view === 'tomorrow') {
-    const today = upcoming(agenda, 0).filter((entry) => entry.kind === 'TASK');
-    const tomorrow = upcoming(agenda, 1).filter((entry) => entry.days === 1);
-    const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60_000);
-    const lines = [`🌙 <b>Amanhã</b> · ${escapeHtml(longToday(tomorrowDate))}`, ''];
-    if (today.length > 0) {
-      lines.push('⏰ <b>Ainda hoje</b>', ...today.map((entry) => listLine(entry, now)), '');
-    }
-    if (tomorrow.length > 0) {
-      lines.push(...tomorrow.flatMap((entry) => [listLine(entry, now), '']));
-    } else if (today.length === 0) {
-      lines.push('Nada pra amanhã. 🎉');
-    }
-    return {
-      text: lines.join('\n').trim(),
-      keyboard: [
-        ...itemButtons([...today, ...tomorrow], 'tomorrow'),
-        [viewButton('📋 Painel', 'home')],
-      ],
-    };
-  }
-  // Calendário: próximos 14 dias agrupados por dia.
-  const twoWeeks = upcoming(agenda, 14);
-  const lines = ['📅 <b>Próximos 14 dias</b>'];
-  if (twoWeeks.length === 0)
-    lines.push('', 'Nenhuma prova ou entrega nas próximas duas semanas. 🎉');
-  const byDay = new Map<string, AgendaEntry[]>();
-  for (const entry of twoWeeks) {
-    const key = entry.due ? localDateKey(entry.due) : '';
-    byDay.set(key, [...(byDay.get(key) ?? []), entry]);
-  }
-  for (const [day, entries] of byDay) {
-    const date = parseAcademicDate(day);
-    lines.push('', `<b>${escapeHtml(weekdayName(date))}, ${dayMonth(date)}</b>`);
-    for (const entry of entries) {
-      const time =
-        entry.due && hasExplicitTime(entry.date?.value ?? '') ? ` · ${clock(entry.due)}` : '';
-      lines.push(`${itemIcon(entry.kind)} ${escapeHtml(itemLabel(entry.item))}${time}`);
-    }
-  }
-  return { text: lines.join('\n'), keyboard: [backToHome] };
-}
-
 export function helpText(): string {
   return [
     '🎓 <b>Seu assistente da UVV</b>',
     '',
-    'Eu acompanho o Portal, o AVA e seu e-mail e te aviso quando aparecer prova, atividade nova ou mudança de prazo.',
+    'Pode conversar comigo normalmente, como com uma pessoa: “como tá minha semana?”, “tenho prova sexta?”, “o que eu faço hoje?”, “organiza meus estudos”, “me lembra da AOP amanhã às 19h”.',
     '',
-    '• /painel mostra suas provas e atividades',
+    'Eu acompanho o Portal, o AVA, seus e-mails da faculdade e sua Google Agenda, e te aviso do que importa.',
+    '',
+    '• Atalhos: /hoje /semana /provas /atividades /prazos /agenda /novidades /painel',
     '• Nos avisos, use os botões pra concluir, lembrar depois ou ignorar',
-    '• Pode conversar comigo: “me lembra de revisar a prova amanhã às 14h”',
-    '• Peça “coloca na minha agenda” para criar também no Google Calendar',
     '• /gastos mostra o consumo do GPT; /esquecer limpa o contexto da conversa',
   ].join('\n');
 }

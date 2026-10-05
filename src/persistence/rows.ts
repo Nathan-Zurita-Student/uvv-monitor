@@ -66,7 +66,6 @@ export const tables = {
   reminders: ['itemId', 'remindAt', 'createdAt', 'sentAt', 'chatId'],
   notification_log: ['itemId', 'signature', 'level', 'lastNotifiedAt'],
   telegram_batches: ['batchId', 'createdAt', 'entries'],
-  conversation_operations: ['updateId', 'state', 'plan', 'reply', 'createdAt'],
   personal_reminders: [
     'id',
     'title',
@@ -77,6 +76,34 @@ export const tables = {
     'itemId',
     'calendarEventId',
     'sentAt',
+  ],
+  /** Fatos duradouros que o usuário contou ao assistente (aulas, professores, preferências). */
+  assistant_memory: [
+    'id',
+    'category',
+    'subject',
+    'content',
+    'weekdays',
+    'startTime',
+    'endTime',
+    'createdAt',
+    'updatedAt',
+  ],
+  /** Uma linha por conversa: o que foi perguntado, ferramentas, tokens, custo e tempo. */
+  assistant_log: [
+    'id',
+    'at',
+    'question',
+    'tools',
+    'rounds',
+    'model',
+    'inputTokens',
+    'cachedTokens',
+    'outputTokens',
+    'costUsd',
+    'latencyMs',
+    'outcome',
+    'reply',
   ],
 } as const;
 
