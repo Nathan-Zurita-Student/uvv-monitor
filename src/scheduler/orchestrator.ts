@@ -94,7 +94,6 @@ export async function runMonitor(
   // Arquivos dos posts já enviados no Telegram não são baixados de novo; os que falharam (download
   // ou envio) são tentados outra vez.
   const storedDocuments = await repository.listPortalDocuments();
-  const documentTexts = await repository.listPortalDocumentTexts();
   let downloaded: DownloadedDocument[] = [];
   let classSlots: ClassSlot[] | undefined;
   const portalSession = await createPortalBrowserSession();
@@ -119,16 +118,9 @@ export async function runMonitor(
       await repository.replaceClassSchedule(portal.schedule, now.toISOString());
     }
     downloaded = portal.documents;
-    for (const document of downloaded) {
-      if (document.text) documentTexts.set(document.id, document.text);
-    }
     if (downloaded.length > 0) {
       logger.info(
-        {
-          module: 'Portal',
-          documents: downloaded.length,
-          read: downloaded.filter((document) => document.status === 'lido').length,
-        },
+        { module: 'Portal', documents: downloaded.length },
         'Arquivos dos posts baixados',
       );
     }
@@ -189,24 +181,12 @@ export async function runMonitor(
     [...diff.newItems, ...meaningfulChanges.map(({ item }) => item)].map((item) => item.id),
   );
 
-  const attachmentsByPost = new Map<string, Array<{ name: string; text: string }>>();
-  const documentsById = new Map(storedDocuments.map((document) => [document.id, document]));
-  for (const document of downloaded) documentsById.set(document.id, document);
-  for (const document of documentsById.values()) {
-    const text = documentTexts.get(document.id);
-    if (!text) continue;
-    attachmentsByPost.set(document.postExternalId, [
-      ...(attachmentsByPost.get(document.postExternalId) ?? []),
-      { name: document.fileName, text },
-    ]);
-  }
   try {
     const ai = await enrichItemsWithAi(prioritized, createAiProvider(config), {
       maxCalls: config.AI_MAX_CALLS_PER_RUN,
       maxInputCharacters: config.AI_MAX_INPUT_CHARS,
       priorityIds: noveltyIds,
       now,
-      attachmentsFor: (item) => attachmentsByPost.get(item.externalId) ?? [],
     });
     prioritized = ai.items;
     if (ai.errors.length > 0) run.errors.push(...ai.errors.map((error) => `IA: ${error}`));

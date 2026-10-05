@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildAcademicPrompt } from '../../src/ai/prompt.js';
-import { analysisInputHash } from '../../src/ai/service.js';
 import { decodeCallback, encodeCallback } from '../../src/bot/callbacks.js';
 import { handleUpdate } from '../../src/bot/core.js';
 import { createRenderContext } from '../../src/bot/screens.js';
 import { renderView } from '../../src/bot/views.js';
 import type { PortalDocument } from '../../src/models/portal-document.js';
 import { deduplicateItems } from '../../src/persistence/deduplication.js';
-import { item } from './fixtures.js';
 
 const now = new Date('2026-10-05T18:00:00-03:00');
 
@@ -107,7 +104,7 @@ describe('📂 Materiais', () => {
   });
 });
 
-describe('coleta: mudanças reais e anexos na análise', () => {
+describe('coleta: mudanças reais', () => {
   it('changedAt só aparece quando o texto ou o prazo mudam', () => {
     const base = {
       externalId: 'post:1',
@@ -139,20 +136,5 @@ describe('coleta: mudanças reais e anexos na análise', () => {
       '2026-10-04T00:00:00Z',
     ).unchangedItems[0]!;
     expect(later.metadata?.changedAt).toBe('2026-10-03T00:00:00Z');
-  });
-
-  it('a IA recebe o texto dos anexos, e sem anexos o hash não muda', () => {
-    const post = item({ description: 'Segue o enunciado.' });
-    const prompt = buildAcademicPrompt({
-      item: post,
-      maxInputCharacters: 20_000,
-      attachments: [{ name: 'Trabalho_1B.pdf', text: 'Entrega até 14/10 em grupos de 4.' }],
-    });
-    expect(prompt).toContain('Arquivo anexado pelo professor: Trabalho_1B.pdf');
-    expect(prompt).toContain('Entrega até 14/10');
-    expect(analysisInputHash(post)).toBe(analysisInputHash(post, []));
-    expect(analysisInputHash(post)).not.toBe(
-      analysisInputHash(post, [{ name: 'a.pdf', text: 'novo' }]),
-    );
   });
 });

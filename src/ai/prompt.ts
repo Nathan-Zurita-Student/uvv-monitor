@@ -19,18 +19,7 @@ export function redactAcademicText(value: string): string {
 export function buildAcademicPrompt(request: AcademicAnalysisRequest): string {
   const { item, maxInputCharacters } = request;
   const now = request.now ?? new Date();
-  const description = redactAcademicText(item.description);
-  // O texto do aviso vem primeiro; os anexos dividem o que sobra do limite (mínimo de 4 mil).
-  const remaining = Math.max(4_000, maxInputCharacters - description.length);
-  const attachments = (request.attachments ?? []).filter((attachment) => attachment.text.trim());
-  const perAttachment = attachments.length > 0 ? Math.floor(remaining / attachments.length) : 0;
-  const content = [
-    description.slice(0, maxInputCharacters),
-    ...attachments.map(
-      (attachment) =>
-        `\n--- Arquivo anexado pelo professor: ${attachment.name} ---\n${redactAcademicText(attachment.text).slice(0, perAttachment)}`,
-    ),
-  ].join('\n');
+  const content = redactAcademicText(item.description).slice(0, maxInputCharacters);
   return `Você organiza a vida acadêmica de um estudante universitário cujo foco são provas, trabalhos e tarefas. Analise SOMENTE o conteúdo fornecido.
 
 Hoje é ${formatLongDay(now)} de ${localDateKey(now).slice(0, 4)}.
@@ -39,7 +28,6 @@ Regras obrigatórias:
 - Nunca invente datas, horários, pesos, materiais, obrigatoriedade ou conteúdo de prova.
 - Diferencie fato confirmado de inferência.
 - Escreva em português brasileiro simples e direto.
-- O conteúdo pode trazer arquivos anexados pelo professor (PDF, slides, enunciados): eles fazem parte do aviso. Use-os para o resumo, as ações, os tópicos de estudo, os materiais e o prazo.
 
 Campos:
 - displayTitle: título curto e claro (até 60 caracteres), sem o nome da disciplina e sem datas. Exemplos: "Prova do 1º bimestre", "Trabalho prático em grupo", "Pesquisa de avaliação institucional".

@@ -26,9 +26,6 @@ export interface AcademicRepository {
   listClassSchedule(): Promise<ClassSlot[]>;
   /** Regrava o quadro inteiro (o Portal mostra sempre o período atual completo). */
   replaceClassSchedule(slots: ClassSlot[], updatedAt: string): Promise<void>;
-  /** Dados dos arquivos dos posts, sem o texto extraído. */
   listPortalDocuments(): Promise<PortalDocument[]>;
-  listPortalDocumentTexts(): Promise<Map<string, string>>;
-  /** Grava os dados e, quando houver, o texto extraído (em abas separadas). */
   upsertPortalDocuments(documents: PortalDocument[]): Promise<void>;
 }

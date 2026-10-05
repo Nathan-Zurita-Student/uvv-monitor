@@ -123,4 +123,37 @@ describe('arquivos dos professores no Telegram', () => {
     expect(dry.albums).toHaveLength(0);
     expect(result.documents[0]?.telegramFileId).toBe('');
   });
+
+  it('divide em álbuns pequenos e, se um álbum falhar, manda arquivo por arquivo', async () => {
+    const big = Array.from({ length: 8 }, (_, index) =>
+      doc({
+        id: `doc:${String(index)}`,
+        sha256: `sha-${String(index)}`,
+        fileName: `foto${String(index)}.jpeg`,
+        sizeBytes: 1_500_000,
+      }),
+    );
+    const plan = planFileBatches(big, now);
+    expect(plan.fresh.map((batch) => batch.documents.length)).toEqual([6, 2]);
+    const heavy = planFileBatches(
+      [
+        doc({ id: 'doc:a', sha256: 'a', sizeBytes: 9_000_000 }),
+        doc({ id: 'doc:b', sha256: 'b', sizeBytes: 9_000_000 }),
+      ],
+      now,
+    );
+    expect(heavy.fresh.map((batch) => batch.documents.length)).toEqual([1, 1]);
+
+    class FlakyAlbums extends FakeSender {
+      override sendFiles(files: OutgoingFile[]): Promise<string[]> {
+        if (files.length > 1) return Promise.reject(new Error('fetch failed'));
+        return super.sendFiles(files);
+      }
+    }
+    const sender = new FlakyAlbums();
+    const result = await deliverPortalFiles(sender, big.slice(0, 3), [], now, { pause: noPause });
+    expect(result.sent).toBe(3);
+    expect(result.errors).toEqual([]);
+    expect(sender.albums.map((album) => album.length)).toEqual([1, 1, 1]);
+  });
 });

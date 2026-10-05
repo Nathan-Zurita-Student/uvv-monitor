@@ -337,23 +337,10 @@ function todayClasses(env: AssistantEnv): { classesToday?: string } {
   return text ? { classesToday: text } : {};
 }
 
-/** Arquivos dos professores: a lista vem da cópia em cache; o texto, da planilha, só se preciso. */
+/** Arquivos dos professores: a lista vem da cópia em cache; reenviar usa o file_id do Telegram. */
 function documentsPort(env: AssistantEnv): DocumentsPort {
-  let texts: Map<string, string> | undefined;
   return {
     list: () => filesOf(env.snapshot),
-    withText: () => {
-      texts ??= new Map(
-        SheetStore.open(env.props.sheetId)
-          .rows('portal_document_texts')
-          .filter((row) => row[0] && row[1])
-          .map((row) => [row[0]!, row[1]!]),
-      );
-      return filesOf(env.snapshot).map((document) => ({
-        ...document,
-        ...(texts!.get(document.id) ? { text: texts!.get(document.id)! } : {}),
-      }));
-    },
     send: (files) => sendFilesById(env.props, files),
   };
 }

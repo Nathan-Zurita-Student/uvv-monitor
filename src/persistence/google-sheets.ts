@@ -238,21 +238,7 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
     return (await this.rows('portal_documents')).flatMap((row) => portalDocumentFromRow(row) ?? []);
   }
 
-  async listPortalDocumentTexts(): Promise<Map<string, string>> {
-    return new Map(
-      (await this.rows('portal_document_texts'))
-        .filter((row) => row[0] && row[1])
-        .map((row) => [row[0]!, row[1]!]),
-    );
-  }
-
   async upsertPortalDocuments(documents: PortalDocument[]): Promise<void> {
     await this.upsertRows('portal_documents', documents.map(portalDocumentToRow));
-    await this.upsertRows(
-      'portal_document_texts',
-      documents
-        .filter((document) => document.text)
-        .map((document) => [document.id, document.text!]),
-    );
   }
 }

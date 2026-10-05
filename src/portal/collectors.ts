@@ -7,7 +7,6 @@ import { logger } from '../utils/logger.js';
 import { buildClassSlots } from './class-schedule.js';
 import { PORTAL_URLS } from './constants.js';
 import type { DownloadedDocument } from '../telegram/portal-files.js';
-import { readDocument } from './documents.js';
 import { parseExamSchedulePdf } from './exam-schedule.js';
 import type { ClassCardInput, ClassPostPageInput, MessageLinkInput, PortalItem } from './models.js';
 import {
@@ -279,9 +278,9 @@ const MAX_DOWNLOADS_PER_RUN = 40;
 const MAX_DOCUMENT_BYTES = 45 * 1024 * 1024;
 
 /**
- * Baixa os arquivos anexados aos posts que ainda não foram enviados ao Telegram e extrai o texto
- * dos legíveis (PDF, DOCX, PPTX, ZIP). Usa a sessão do Portal já aberta (o download exige login);
- * nada é salvo em disco: o conteúdo segue em memória até o envio.
+ * Baixa os arquivos anexados aos posts que ainda não foram enviados ao Telegram. Usa a sessão do
+ * Portal já aberta (o download exige login); nada é salvo em disco nem lido: o conteúdo segue em
+ * memória só até o envio.
  */
 export async function downloadPostDocuments(
   page: Page,
@@ -337,23 +336,15 @@ export async function downloadPostDocuments(
         continue;
       }
       const bytes = new Uint8Array(await response.body());
-      const read =
-        bytes.length > MAX_DOCUMENT_BYTES
-          ? { pages: 0, text: '', status: 'grande demais' }
-          : await readDocument(bytes, attachment.name, contentType).catch((error: unknown) => ({
-              pages: 0,
-              text: '',
-              status: `não lido: ${error instanceof Error ? error.message.slice(0, 80) : 'erro'}`,
-            }));
+      const tooBig = bytes.length > MAX_DOCUMENT_BYTES;
       documents.push({
         ...base,
         contentType,
         sizeBytes: bytes.length,
         sha256: createHash('sha256').update(bytes).digest('hex'),
-        pages: read.pages,
-        status: read.status,
-        ...(read.text ? { text: read.text } : {}),
-        ...(bytes.length <= MAX_DOCUMENT_BYTES ? { bytes } : {}),
+        pages: 0,
+        status: tooBig ? 'grande demais' : 'baixado',
+        ...(tooBig ? {} : { bytes }),
       });
     } catch (error) {
       documents.push({

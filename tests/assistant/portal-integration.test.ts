@@ -5,7 +5,6 @@ import {
   classesTodayText,
   classWeeklySlots,
 } from '../../src/assistant/classes.js';
-import { searchMaterials } from '../../src/assistant/materials.js';
 import { buildTimeline, busyIntervals } from '../../src/assistant/timeline.js';
 import { ToolRunner } from '../../src/assistant/tools.js';
 import type { ClassSlot } from '../../src/models/class-schedule.js';
@@ -74,7 +73,6 @@ function documents(): PortalDocument[] {
       fetchedAt: now.toISOString(),
       telegramFileId: 'file-u3',
       sentAt: now.toISOString(),
-      text: 'Introdução. O método de Gauss-Jordan resolve sistemas lineares Ax = b escalonando a matriz aumentada até a forma reduzida.',
     },
     {
       id: 'doc:M1',
@@ -92,7 +90,6 @@ function documents(): PortalDocument[] {
       fetchedAt: now.toISOString(),
       telegramFileId: 'file-m1',
       sentAt: now.toISOString(),
-      text: 'Use FlatList, TextInput e RNPickerSelect.',
     },
   ];
 }
@@ -140,13 +137,7 @@ describe('quadro de horários e avisos de aula cancelada', () => {
   });
 });
 
-describe('materiais dos professores', () => {
-  it('acha o trecho certo mesmo sem acento na pergunta', () => {
-    const [hit] = searchMaterials(documents(), 'gauss jordan sistemas lineares');
-    expect(hit?.document.fileName).toBe('Unidade_03.pdf');
-    expect(hit?.excerpts[0]).toContain('Gauss-Jordan resolve sistemas lineares');
-  });
-
+describe('arquivos dos professores no assistente', () => {
   it('visão da matéria, leitura do material e envio do arquivo', () => {
     const sent: Array<Array<{ fileId: string; caption?: string }>> = [];
     const files = documents();
@@ -170,13 +161,7 @@ describe('materiais dos professores', () => {
       items: [post, atestado],
       classes,
       documents: {
-        list: () =>
-          files.map((document) => {
-            const copy = { ...document };
-            delete copy.text;
-            return copy;
-          }),
-        withText: () => files,
+        list: () => files,
         send: (selection) => sent.push(selection),
       },
     });
@@ -196,14 +181,8 @@ describe('materiais dos professores', () => {
     });
     expect(call('read_academic_item', { item_id: 'UVV-POST01' })).toMatchObject({
       text: 'Segue material da Unidade 03.',
-      attachments: [expect.objectContaining({ id: 'doc:U3', status: 'lido' })],
+      attachments: [expect.objectContaining({ id: 'doc:U3', sentToChat: true })],
     });
-    const material = call('read_class_material', {
-      query: 'gauss',
-      discipline: 'cálculo numérico',
-      document_id: null,
-    });
-    expect(JSON.stringify(material)).toContain('Gauss-Jordan');
     expect(
       call('send_class_files', {
         document_id: null,

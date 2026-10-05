@@ -109,33 +109,11 @@ export class InMemoryAcademicRepository implements AcademicRepository {
   }
 
   listPortalDocuments(): Promise<PortalDocument[]> {
-    return Promise.resolve(
-      Array.from(this.documents.values()).map((document) => {
-        const copy = structuredClone(document);
-        delete copy.text;
-        return copy;
-      }),
-    );
-  }
-
-  listPortalDocumentTexts(): Promise<Map<string, string>> {
-    return Promise.resolve(
-      new Map(
-        Array.from(this.documents.values())
-          .filter((document) => document.text)
-          .map((document) => [document.id, document.text!]),
-      ),
-    );
+    return Promise.resolve(Array.from(this.documents.values()).map((d) => structuredClone(d)));
   }
 
   upsertPortalDocuments(documents: PortalDocument[]): Promise<void> {
-    for (const document of documents) {
-      const previous = this.documents.get(document.id);
-      this.documents.set(document.id, {
-        ...structuredClone(document),
-        ...(document.text ? {} : previous?.text ? { text: previous.text } : {}),
-      });
-    }
+    for (const document of documents) this.documents.set(document.id, structuredClone(document));
     return Promise.resolve();
   }
 }

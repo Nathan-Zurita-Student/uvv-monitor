@@ -12,7 +12,6 @@ import type {
   AcademicAnalysis,
   AcademicAnalysisRequest,
   AiProvider,
-  AnalysisAttachment,
   DueDateEvidence,
 } from './types.js';
 
@@ -36,25 +35,9 @@ export async function analyzeItem(
   return parseAcademicAnalysis(await provider.generateJson(buildAcademicPrompt(request)));
 }
 
-export function analysisInputHash(
-  item: AcademicItem,
-  attachments: readonly AnalysisAttachment[] = [],
-): string {
-  const attachmentHashes = attachments.map((attachment) =>
-    generateContentHash({
-      source: 'ATTACHMENT',
-      externalId: attachment.name,
-      title: attachment.name,
-      description: attachment.text,
-      type: 'FILE',
-    }),
-  );
+export function analysisInputHash(item: AcademicItem): string {
   return generateContentHash({
-    // Sem anexos o hash continua igual ao de antes: nada é reanalisado à toa.
-    metadata: {
-      aiVersion: AI_ANALYSIS_VERSION,
-      ...(attachmentHashes.length > 0 ? { attachments: attachmentHashes.join(',') } : {}),
-    },
+    metadata: { aiVersion: AI_ANALYSIS_VERSION },
     source: item.source,
     externalId: item.externalId,
     discipline: item.discipline ?? '',
@@ -84,14 +67,11 @@ export function verifiedDueDate(
   analysis: AcademicAnalysis,
   item: AcademicItem,
   now = new Date(),
-  attachments: readonly AnalysisAttachment[] = [],
 ): DueDateEvidence | undefined {
   const due = analysis.dueDate;
   if (!due) return undefined;
   const evidence = normalizeForMatch(due.evidence);
-  const source = normalizeForMatch(
-    [item.title, item.description, ...attachments.map((attachment) => attachment.text)].join('\n'),
-  );
+  const source = normalizeForMatch(`${item.title}\n${item.description}`);
   if (evidence.length < 4 || !source.includes(evidence)) return undefined;
   const day = Number(due.date.slice(8, 10));
   if (!new RegExp(`(^|\\D)0?${String(day)}(\\D|$)`).test(evidence)) return undefined;
@@ -174,8 +154,6 @@ export async function enrichItemsWithAi(
     maxInputCharacters: number;
     priorityIds?: ReadonlySet<string>;
     now?: Date;
-    /** Arquivos já lidos que acompanham o item (anexos dos posts). */
-    attachmentsFor?: (item: AcademicItem) => AnalysisAttachment[];
   },
 ): Promise<{ items: AcademicItem[]; calls: number; errors: string[] }> {
   if (!provider || options.maxCalls === 0) return { items, calls: 0, errors: [] };
@@ -185,8 +163,7 @@ export async function enrichItemsWithAi(
   const enriched = new Map<string, AcademicItem>();
   for (const item of analysisQueue(items, options.priorityIds ?? new Set(), now)) {
     if (calls >= options.maxCalls) break;
-    const attachments = options.attachmentsFor?.(item) ?? [];
-    const hash = analysisInputHash(item, attachments);
+    const hash = analysisInputHash(item);
     if (item.metadata?.aiInputHash === hash) continue;
     calls += 1;
     try {
@@ -194,7 +171,6 @@ export async function enrichItemsWithAi(
         item,
         maxInputCharacters: options.maxInputCharacters,
         now,
-        ...(attachments.length > 0 ? { attachments } : {}),
       });
       const baseMetadata = Object.fromEntries(
         Object.entries(item.metadata ?? {}).filter(([key]) => !key.startsWith('ai')),
@@ -203,12 +179,7 @@ export async function enrichItemsWithAi(
         ...item,
         metadata: {
           ...baseMetadata,
-          ...analysisMetadata(
-            analysis,
-            provider,
-            hash,
-            verifiedDueDate(analysis, item, now, attachments),
-          ),
+          ...analysisMetadata(analysis, provider, hash, verifiedDueDate(analysis, item, now)),
         },
       });
     } catch (error) {

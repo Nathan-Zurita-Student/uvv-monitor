@@ -15,7 +15,9 @@ export interface FileSender {
 
 /** Limite de upload de bots no Telegram (50 MB), com folga. */
 const MAX_TELEGRAM_BYTES = 49 * 1024 * 1024;
-const ALBUM_SIZE = 10;
+/** Álbuns pequenos: um upload grande demais costuma cair ou estourar o tempo. */
+const ALBUM_SIZE = 6;
+const ALBUM_BYTES = 10 * 1024 * 1024;
 /** Arquivos de posts desta semana chegam como novidade; os mais antigos, organizados por matéria. */
 const FRESH_DAYS = 7;
 
@@ -38,11 +40,24 @@ function isFresh(document: PortalDocument, now: Date): boolean {
   return !Number.isFinite(published) || now.getTime() - published <= FRESH_DAYS * 86_400_000;
 }
 
-function chunk<T>(values: T[], size: number): T[][] {
-  const result: T[][] = [];
-  for (let index = 0; index < values.length; index += size) {
-    result.push(values.slice(index, index + size));
+/** Agrupa em álbuns de até ALBUM_SIZE arquivos e ALBUM_BYTES no total (um arquivo grande vai só). */
+function chunk(documents: DownloadedDocument[]): DownloadedDocument[][] {
+  const result: DownloadedDocument[][] = [];
+  let current: DownloadedDocument[] = [];
+  let bytes = 0;
+  for (const document of documents) {
+    if (
+      current.length > 0 &&
+      (current.length >= ALBUM_SIZE || bytes + document.sizeBytes > ALBUM_BYTES)
+    ) {
+      result.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(document);
+    bytes += document.sizeBytes;
   }
+  if (current.length > 0) result.push(current);
   return result;
 }
 
@@ -70,7 +85,7 @@ export function planFileBatches(
     const ordered = [...group].sort((left, right) =>
       left.publishedOn.localeCompare(right.publishedOn),
     );
-    chunk(ordered, ALBUM_SIZE).forEach((part, partIndex) => {
+    chunk(ordered).forEach((part, partIndex) => {
       backfill.push({
         documents: part,
         captions: part.map(
@@ -86,7 +101,7 @@ export function planFileBatches(
   }
   for (const group of byPost.values()) {
     const [first] = group as [DownloadedDocument];
-    chunk(group, ALBUM_SIZE).forEach((part, partIndex) => {
+    chunk(group).forEach((part, partIndex) => {
       fresh.push({
         documents: part,
         captions: part.map((_, index) =>
@@ -147,17 +162,9 @@ export async function deliverPortalFiles(
   }
   for (const [index, batch] of [...backfill, ...fresh].entries()) {
     if (index > 0) await pause(1_500);
-    try {
-      const ids = await sender.sendFiles(
-        batch.documents.map((document, position) => ({
-          bytes: document.bytes!,
-          fileName: document.fileName,
-          contentType: document.contentType,
-          ...(batch.captions[position] ? { caption: batch.captions[position] } : {}),
-        })),
-        { silent: backfill.includes(batch) && index > 0 },
-      );
-      batch.documents.forEach((document, position) => {
+    const silent = backfill.includes(batch) && index > 0;
+    const record = (documents: DownloadedDocument[], ids: string[]) =>
+      documents.forEach((document, position) => {
         const id = ids[position];
         if (!id) return;
         document.telegramFileId = id;
@@ -165,12 +172,30 @@ export async function deliverPortalFiles(
         if (document.sha256) bySha.set(document.sha256, id);
         sent += 1;
       });
+    const outgoing = (document: DownloadedDocument, position: number): OutgoingFile => ({
+      bytes: document.bytes!,
+      fileName: document.fileName,
+      contentType: document.contentType,
+      ...(batch.captions[position] ? { caption: batch.captions[position] } : {}),
+    });
+    try {
+      record(batch.documents, await sender.sendFiles(batch.documents.map(outgoing), { silent }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'erro';
-      errors.push(
-        `Arquivos (${batch.documents.map((document) => document.fileName).join(', ')}): ${message}`,
+      logger.warn(
+        { module: 'Telegram', error: error instanceof Error ? error.message : 'erro' },
+        'Álbum não enviado; tentando arquivo por arquivo',
       );
-      logger.warn({ module: 'Telegram', error: message }, 'Envio de arquivos falhou');
+      // Um por um: o que falhar de novo fica sem file_id e volta na próxima coleta.
+      for (const [position, document] of batch.documents.entries()) {
+        try {
+          await pause(1_000);
+          record([document], await sender.sendFiles([outgoing(document, position)], { silent }));
+        } catch (single) {
+          const message = single instanceof Error ? single.message : 'erro';
+          errors.push(`Arquivo ${document.fileName}: ${message}`);
+          logger.warn({ module: 'Telegram', error: message }, 'Envio de arquivo falhou');
+        }
+      }
     }
   }
   // Repetidos desta coleta recebem o file_id do primeiro envio.

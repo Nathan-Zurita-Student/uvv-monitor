@@ -95,13 +95,15 @@ Abas usadas: `personal_reminders` (lembretes pedidos na conversa), `assistant_me
 tokens, custo, tempo e resultado). São criadas automaticamente.
 
 Do Portal, o bot lê o que o monitor grava: `class_schedule` (Quadro de Horários, na cópia em cache),
-`portal_documents` (arquivos dos posts com o `file_id` do Telegram, também na cópia) e
-`portal_document_texts` (texto extraído, lido da planilha só quando o assistente precisa do
-conteúdo). O botão **📂 Materiais**, o comando `/materiais` e a ferramenta `send_class_files`
+`portal_documents` (arquivos dos posts com o `file_id` do Telegram, também na cópia). O conteúdo
+dos arquivos não é lido. O botão **📂 Materiais**, o comando `/materiais` e a ferramenta `send_class_files`
 reenviam os arquivos com `sendDocument`/`sendMediaGroup` usando o `file_id`: o Apps Script nunca
 baixa nada do Portal (o download exige login e é feito pelo monitor).
 
-O acionador `processReminders` (5 minutos) envia os lembretes pessoais e, uma vez por dia a partir
+O acionador `processReminders` (5 minutos) também dispara a coleta do monitor às 12h, 17h e 21h
+(`workflow_dispatch` com a propriedade `MONITOR_DISPATCH_TOKEN`; sem ela, nada é disparado e vale
+o agendamento do GitHub). **🔍 Verificar Portal agora** e `/atualizar` disparam na hora, no máximo
+uma vez a cada 10 minutos. Ele envia os lembretes pessoais e, uma vez por dia a partir
 de `ASSISTANT_PROACTIVE_HOUR`, o aviso proativo mais importante que ainda não foi dado.
 
 Propriedades opcionais no Apps Script:

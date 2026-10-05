@@ -1,49 +1,10 @@
-import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { buildClassSlots, describeClassSlots } from '../../src/portal/class-schedule.js';
-import { documentKind, extractOfficeText, readDocument } from '../../src/portal/documents.js';
 import {
   parseBlogTimeline,
   parseClassPostPage,
   parsePostAttachments,
 } from '../../src/portal/parsers.js';
-
-/** ZIP mínimo (deflate) para testar DOCX/PPTX/.zip sem arquivos de fixture. */
-function zip(files: Record<string, string>): Uint8Array {
-  const locals: Buffer[] = [];
-  const centrals: Buffer[] = [];
-  let offset = 0;
-  for (const [name, content] of Object.entries(files)) {
-    const data = deflateRawSync(Buffer.from(content, 'utf8'));
-    const nameBytes = Buffer.from(name, 'utf8');
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(0x800, 6);
-    local.writeUInt16LE(8, 8);
-    local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(Buffer.byteLength(content), 22);
-    local.writeUInt16LE(nameBytes.length, 26);
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(0x800, 8);
-    central.writeUInt16LE(8, 10);
-    central.writeUInt32LE(data.length, 20);
-    central.writeUInt32LE(Buffer.byteLength(content), 24);
-    central.writeUInt16LE(nameBytes.length, 28);
-    central.writeUInt32LE(offset, 42);
-    locals.push(local, nameBytes, data);
-    centrals.push(central, nameBytes);
-    offset += local.length + nameBytes.length + data.length;
-  }
-  const directory = Buffer.concat(centrals);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(Object.keys(files).length, 8);
-  end.writeUInt16LE(Object.keys(files).length, 10);
-  end.writeUInt32LE(directory.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return new Uint8Array(Buffer.concat([...locals, directory, end]));
-}
 
 describe('quadro de horários do Portal', () => {
   it('junta os tempos seguidos da mesma disciplina e marca EAD', () => {
@@ -162,56 +123,5 @@ describe('mural da turma e arquivos dos posts', () => {
     expect(item.links).toContain(
       'https://aluno.uvv.br/Aluno/BaixarArquivoPost?aId=NTU1MjEw&pId=858011',
     );
-  });
-
-  it('extrai texto de DOCX, PPTX e de dentro de .zip; imagem não é lida', async () => {
-    const docx = zip({
-      'word/document.xml':
-        '<w:document><w:body><w:p><w:r><w:t>Lista de AFND</w:t></w:r></w:p><w:p><w:r><w:t>Questão 1 &amp; 2</w:t></w:r></w:p></w:body></w:document>',
-    });
-    expect(extractOfficeText(docx, 'Lista.docx').text).toBe('Lista de AFND\nQuestão 1 & 2');
-    const pptx = zip({
-      'ppt/slides/slide2.xml': '<p:sld><a:p><a:t>Segundo</a:t></a:p></p:sld>',
-      'ppt/slides/slide1.xml': '<p:sld><a:p><a:t>Primeiro</a:t></a:p></p:sld>',
-    });
-    expect(extractOfficeText(pptx, 'Aula.pptx')).toEqual({
-      pages: 2,
-      text: 'Slide 1\nPrimeiro\n\nSlide 2\nSegundo',
-    });
-    const archive = zip({
-      '__MACOSX/._enunciado.txt': 'lixo',
-      'trabalho/enunciado.txt': 'Implementar um AFD que reconhece números pares.',
-      'trabalho/foto.png': 'binário',
-    });
-    const read = await readDocument(archive, 'Trabalho_2026-2.zip', 'application/x-zip-compressed');
-    expect(read.status).toBe('lido');
-    expect(read.text).toContain('### trabalho/enunciado.txt');
-    expect(read.text).toContain('números pares');
-    expect(read.text).not.toContain('lixo');
-    expect(await readDocument(new Uint8Array([1, 2, 3]), 'IMG_5330.png', '')).toMatchObject({
-      status: 'imagem',
-      text: '',
-    });
-    expect(documentKind('Unidade_03.pdf', 'application/octet-stream')).toBe('pdf');
-  });
-
-  it('lê o PDF sem inutilizar os bytes que ainda vão para o Telegram', async () => {
-    const pdf = [
-      '%PDF-1.4',
-      '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj',
-      '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj',
-      '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 400 100]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj',
-      '4 0 obj<</Length 66>>stream',
-      'BT /F1 12 Tf 20 50 Td (Enunciado do trabalho de Linguagens Formais) Tj ET',
-      'endstream endobj',
-      '5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj',
-      'trailer<</Root 1 0 R>>',
-      '%%EOF',
-    ].join('\n');
-    const bytes = new Uint8Array(Buffer.from(pdf, 'latin1'));
-    const read = await readDocument(bytes, 'enunciado.pdf', 'application/pdf');
-    expect(read.text).toContain('Enunciado do trabalho de Linguagens Formais');
-    expect(bytes.byteLength).toBe(pdf.length);
-    expect(new Blob([new Uint8Array(bytes)]).size).toBe(pdf.length);
   });
 });

@@ -28,17 +28,10 @@ export interface AcademicAnalysis {
   certainty: CertaintyLevel;
 }
 
-/** Arquivo anexado ao aviso (PDF, DOCX...) com o texto já extraído. */
-export interface AnalysisAttachment {
-  name: string;
-  text: string;
-}
-
 export interface AcademicAnalysisRequest {
   item: AcademicItem;
   maxInputCharacters: number;
   now?: Date;
-  attachments?: AnalysisAttachment[];
 }
 
 export interface AiProvider {

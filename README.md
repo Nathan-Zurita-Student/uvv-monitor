@@ -11,8 +11,8 @@ ferramentas. Sem chave da OpenAI, botões, comandos, avisos e lembretes continua
 - Coleta read-only de Mensagens, murais completos de Minhas Turmas (todas as páginas do "Carregar
   mais…", com data de cada post), arquivos anexados pelos professores, atividades do Ambiente
   Virtual, Atendimento, Calendário de Atividades e Quadro de Horários (aulas por dia e horário).
-- Arquivos dos posts (PDF, DOCX, PPTX, ZIP, imagens) baixados e enviados no Telegram; o texto dos
-  legíveis é extraído para a IA e para o assistente responder sobre o material.
+- Arquivos dos posts (PDF, DOCX, PPTX, ZIP, imagens) baixados e enviados no Telegram como estão,
+  sem leitura do conteúdo.
 - Gmail read-only, Google Calendar, Google Sheets e Telegram implementados; a validação externa
   depende da configuração OAuth/Bot do usuário.
 - Hash, deduplicação entre posts/calendário, mudanças de prazo, prioridade, tarefas interativas,
@@ -86,7 +86,7 @@ O que é lido a cada coleta:
 | Quadro de Horários      | Aba `class_schedule`: um bloco por aula (disciplina, dia, início e fim; EAD marcada). Hoje/Semana mostram as aulas, e prova ou apresentação sem hora vai para a Agenda no horário da aula daquele dia (com aviso de que é provável). |
 | Minhas Turmas → Acessar | O mural inteiro de cada turma (o "Carregar mais…" é seguido até o fim), com a data de cada post. Posts antigos encontrados agora entram no histórico sem virar aviso.                                                                |
 | Post → Visualizar Post  | Texto completo, professor e os botões "Baixar Arquivo".                                                                                                                                                                              |
-| Arquivos dos posts      | Baixados com a sessão do Portal (nada fica em disco), enviados no Telegram e registrados em `portal_documents` com o `file_id` para reenviar; o texto extraído fica em `portal_document_texts`.                                      |
+| Arquivos dos posts      | Baixados com a sessão do Portal (nada fica em disco) e enviados no Telegram sem serem lidos; `portal_documents` guarda nome, tamanho, hash e o `file_id` para reenviar.                                                              |
 | Aviso de aula cancelada | "Não haverá aula de Mobile amanhã dia 05/10" risca a aula daquele dia no bot e libera o horário.                                                                                                                                     |
 
 Comandos disponíveis:
@@ -134,7 +134,9 @@ urgência ou um lembrete pedido. A assinatura de cada aviso fica na aba `notific
   recentes; um toque reenvia os arquivos no chat (pelo `file_id` do Telegram, sem baixar de novo).
 - Arquivos novos chegam sozinhos: assim que o monitor encontra um anexo novo no mural, ele chega no
   chat com a matéria e o título do post. Na primeira coleta, todo o material já postado chega
-  organizado por matéria.
+  organizado por matéria (álbuns de até 6 arquivos; se um álbum falhar, vai arquivo por arquivo, e
+  o que não foi enviado tenta de novo na coleta seguinte).
+- **🔍 Verificar Portal agora** (`/atualizar`) pede uma coleta na hora (uma a cada 10 minutos).
 - Atalhos opcionais: `/hoje`, `/semana`, `/provas`, `/atividades`, `/prazos`, `/agenda`,
   `/novidades`, `/materiais`, `/concluidas`, `/uvv`. Tudo isso também funciona escrevendo
   normalmente.
@@ -152,9 +154,9 @@ Qualquer mensagem que não seja comando vai para o assistente, que responde como
 Ele entende datas como "amanhã", "sexta que vem", "dia 15" ou "depois da aula" no fuso
 `America/Sao_Paulo`, mantém o contexto entre mensagens ("que horas?", "me lembra dois dias antes")
 e só usa listas quando fazem sentido. Também abre a matéria como no Portal ("como tá Mobile?",
-"o que o professor postou em Cálculo?"), lê o material ("o que cai na prova segundo o PDF?",
-"o que o trabalho de LFA pede?"), manda os arquivos ("me manda o PDF da unidade 3") e responde
-sobre qualquer e-mail do Gmail, não só os da faculdade.
+"o que o professor postou em Cálculo?", "o que o trabalho de LFA pede?"), manda os arquivos
+("me manda o PDF da unidade 3") e responde sobre qualquer e-mail do Gmail, não só os da faculdade.
+O conteúdo dos arquivos não é lido: o assistente usa o texto do post e envia o arquivo.
 
 ```text
 Telegram → webhook (Apps Script) → assistente (src/assistant/agent.ts) ⇄ GPT
@@ -170,8 +172,8 @@ Telegram → webhook (Apps Script) → assistente (src/assistant/agent.ts) ⇄ G
 
 - **Ferramentas, não contexto gigante:** o GPT recebe só a data, a memória curta e alertas; ele
   decide o que consultar (`get_calendar_events`, `get_academic_tasks`, `get_upcoming_exams`,
-  `get_class_schedule`, `get_discipline_overview`, `read_academic_item`, `read_class_material`,
-  `send_class_files`, `get_academic_context`, `get_free_time`, `get_ava_updates`,
+  `get_class_schedule`, `get_discipline_overview`, `read_academic_item`, `send_class_files`,
+  `get_academic_context`, `get_free_time`, `get_ava_updates`,
   `search_gmail`, `read_email`, `create_calendar_event`, `update_calendar_event`,
   `delete_calendar_event`, `create_reminder`, `cancel_reminder`, `mark_task_completed`,
   `save_memory`, `forget_memory`).
@@ -375,11 +377,21 @@ A primeira execução inicializa a memória sem enviar dezenas de alertas retroa
 
 ## GitHub Actions
 
-O workflow usa UTC:
+O agendamento do GitHub costuma atrasar horas nos horários cheios. Por isso, quem dispara a coleta
+às 12h, 17h e 21h é o Apps Script (`processReminders`, a cada 5 minutos), chamando
+`workflow_dispatch` no horário certo. O `schedule` do workflow fica como reserva, fora da hora
+cheia, e é ignorado quando uma coleta terminou há menos de 3 horas:
 
-- `0 15 * * *` → 12h em São Paulo
-- `0 20 * * *` → 17h em São Paulo
-- `0 0 * * *` → 21h em São Paulo, já no dia UTC seguinte
+- `41 14 * * *` → 11h41 em São Paulo (janela 12h)
+- `41 19 * * *` → 16h41 em São Paulo (janela 17h)
+- `41 23 * * *` → 20h41 em São Paulo (janela 21h)
+
+Para o disparo pelo Apps Script, crie um token _fine-grained_ no GitHub (**Settings → Developer
+settings → Fine-grained tokens**) com acesso só ao repositório `uvv-monitor` e permissão
+**Actions: Read and write**. Guarde-o como secret `MONITOR_DISPATCH_TOKEN` (ou no `.env`) e rode
+**Configurar conversa do Telegram**, ou cole direto em **Propriedades do script** com o mesmo nome.
+Sem o token, o bot continua funcionando e as coletas ficam só no agendamento de reserva.
+`concurrency` garante uma coleta por vez.
 
 As regras internas sempre usam `America/Sao_Paulo`. Quarta-feira e domingo são calculados no fuso
 local. `workflow_dispatch` permite teste manual e escolha da janela lógica. Diagnósticos ficam como
@@ -426,7 +438,8 @@ Revogue o acesso anterior na Conta Google e execute `npm run google:authorize` n
 
 ### GitHub Actions atrasou
 
-Schedules podem atrasar alguns minutos. `RUN_SLOT` preserva a janela acadêmica correta.
+Schedules do GitHub podem atrasar horas. Configure `MONITOR_DISPATCH_TOKEN` (veja GitHub
+Actions) para o Apps Script disparar no horário; `RUN_SLOT` preserva a janela acadêmica correta.
 
 ### Botão inline fica carregando
 

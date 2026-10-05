@@ -1,7 +1,7 @@
 /**
  * Arquivo anexado a um post do professor no Portal (PDF, DOCX, PPTX, ZIP, imagem...). O monitor
- * baixa, envia no Telegram (guardando o file_id para reenviar) e extrai o texto para o assistente.
- * Sem dependências do Node: o bot no Apps Script lê as mesmas abas.
+ * baixa e envia no Telegram, guardando o file_id para reenviar. O conteúdo não é lido.
+ * Sem dependências do Node: o bot no Apps Script lê a mesma aba.
  */
 export interface PortalDocument {
   /** "doc:<aId do Portal>". */
@@ -18,15 +18,14 @@ export interface PortalDocument {
   sizeBytes: number;
   /** SHA-256 do conteúdo: o mesmo arquivo postado em vários posts é enviado uma vez só. */
   sha256: string;
+  /** Sempre 0 (coluna mantida para as linhas já gravadas). */
   pages: number;
-  /** "lido", "imagem", "sem texto (imagem)", "formato não lido", "grande demais" ou "erro: ...". */
+  /** "baixado", "grande demais" ou "erro: ...". */
   status: string;
   fetchedAt: string;
   /** file_id do Telegram depois do primeiro envio (permite reenviar sem baixar de novo). */
   telegramFileId: string;
   sentAt: string;
-  /** Texto extraído (fica numa aba separada, lida só quando o assistente precisa). */
-  text?: string;
 }
 
 export const portalDocumentColumns = [
@@ -46,8 +45,6 @@ export const portalDocumentColumns = [
   'telegramFileId',
   'sentAt',
 ] as const;
-
-export const portalDocumentTextColumns = ['id', 'text'] as const;
 
 export function portalDocumentToRow(document: PortalDocument): string[] {
   return [

@@ -23,6 +23,10 @@ export interface OutgoingFile {
   caption?: string;
 }
 
+function bytesOf(files: OutgoingFile[]): number {
+  return files.reduce((total, file) => total + file.bytes.byteLength, 0);
+}
+
 interface TelegramFileMessage {
   message_id: number;
   document?: { file_id: string };
@@ -127,7 +131,7 @@ export class TelegramClient implements TelegramSender {
         form.set('caption', file.caption.slice(0, 1024));
         form.set('parse_mode', 'HTML');
       }
-      const message = await this.upload<TelegramFileMessage>('sendDocument', form);
+      const message = await this.upload<TelegramFileMessage>('sendDocument', form, bytesOf(files));
       return [message.document?.file_id ?? ''];
     }
     form.set(
@@ -141,18 +145,35 @@ export class TelegramClient implements TelegramSender {
       ),
     );
     files.forEach((file, index) => form.set(`file${String(index)}`, blob(file), file.fileName));
-    const messages = await this.upload<TelegramFileMessage[]>('sendMediaGroup', form);
+    const messages = await this.upload<TelegramFileMessage[]>(
+      'sendMediaGroup',
+      form,
+      bytesOf(files),
+    );
     return messages.map((message) => message.document?.file_id ?? '');
   }
 
-  /** Upload multipart com nova tentativa quando o Telegram pede para esperar (HTTP 429). */
-  private async upload<T>(method: string, form: FormData): Promise<T> {
+  /**
+   * Upload multipart. O tempo limite cresce com o tamanho (conexões de upload lentas); erro de rede
+   * e "espere" do Telegram (HTTP 429) têm nova tentativa.
+   */
+  private async upload<T>(method: string, form: FormData, bytes: number): Promise<T> {
+    const timeout = 60_000 + Math.ceil(bytes / 1_048_576) * 30_000;
     for (let attempt = 1; ; attempt += 1) {
-      const response = await fetch(`${this.baseUrl}/${method}`, {
-        method: 'POST',
-        body: form,
-        signal: AbortSignal.timeout(180_000),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${this.baseUrl}/${method}`, {
+          method: 'POST',
+          body: form,
+          signal: AbortSignal.timeout(timeout),
+        });
+      } catch (error) {
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 3_000 * attempt));
+          continue;
+        }
+        throw error;
+      }
       const payload = (await response
         .json()
         .catch(() => ({ ok: false }))) as TelegramApiResponse<T> & {
