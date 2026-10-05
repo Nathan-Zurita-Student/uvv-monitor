@@ -380,17 +380,19 @@ A primeira execução inicializa a memória sem enviar dezenas de alertas retroa
 O agendamento do GitHub costuma atrasar horas nos horários cheios. Por isso, quem dispara a coleta
 às 12h, 17h e 21h é o Apps Script (`processReminders`, a cada 5 minutos), chamando
 `workflow_dispatch` no horário certo. O `schedule` do workflow fica como reserva, fora da hora
-cheia, e é ignorado quando uma coleta terminou há menos de 3 horas:
+cheia, e é ignorado quando aquele horário já foi coletado (sem repetir o painel nem o "amanhã"):
 
-- `41 14 * * *` → 11h41 em São Paulo (janela 12h)
-- `41 19 * * *` → 16h41 em São Paulo (janela 17h)
-- `41 23 * * *` → 20h41 em São Paulo (janela 21h)
+- `55 15 * * *` → 12h55 em São Paulo (janela 12h)
+- `55 20 * * *` → 17h55 em São Paulo (janela 17h)
+- `55 0 * * *` → 21h55 em São Paulo (janela 21h)
 
 Para o disparo pelo Apps Script, crie um token _fine-grained_ no GitHub (**Settings → Developer
 settings → Fine-grained tokens**) com acesso só ao repositório `uvv-monitor` e permissão
 **Actions: Read and write**. Guarde-o como secret `MONITOR_DISPATCH_TOKEN` (ou no `.env`) e rode
 **Configurar conversa do Telegram**, ou cole direto em **Propriedades do script** com o mesmo nome.
-Sem o token, o bot continua funcionando e as coletas ficam só no agendamento de reserva.
+Sem o token, o bot continua funcionando e as coletas ficam só no agendamento de reserva. Se o
+GitHub recusar o token (vencido ou revogado), o bot avisa uma vez por dia no Telegram; falhas
+passageiras do GitHub são tentadas de novo a cada 5 minutos dentro da janela.
 `concurrency` garante uma coleta por vez.
 
 As regras internas sempre usam `America/Sao_Paulo`. Quarta-feira e domingo são calculados no fuso

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dueSlot } from '../../src/gas/collector-dispatch.js';
-import { recentlyCollected } from '../../src/scheduler/orchestrator.js';
+import { slotAlreadyCollected } from '../../src/scheduler/orchestrator.js';
 
 describe('coleta disparada pelo Apps Script', () => {
   it('dispara cada horário uma vez, logo depois da hora', () => {
@@ -14,10 +14,40 @@ describe('coleta disparada pelo Apps Script', () => {
     expect(dueSlot(at('21:20'), '2026-10-05 17:00')).toBe('21:00');
   });
 
-  it('o agendamento atrasado do GitHub não repete uma coleta recente', () => {
-    const now = new Date('2026-10-05T18:30:00Z');
-    expect(recentlyCollected('2026-10-05T15:05:00Z', now)).toBe(false);
-    expect(recentlyCollected('2026-10-05T16:05:00Z', now)).toBe(true);
-    expect(recentlyCollected(undefined, now)).toBe(false);
+  it('o agendamento atrasado do GitHub não repete um horário já coletado', () => {
+    const at = (value: string) => new Date(`${value}-03:00`);
+    // Disparo do Apps Script às 12:03; a reserva das 12:55 chega às 15:30: ignorada.
+    expect(
+      slotAlreadyCollected(
+        at('2026-10-05T12:09:00').toISOString(),
+        '12:00',
+        at('2026-10-05T15:30:00'),
+      ),
+    ).toBe(true);
+    // Sem disparo: a última coleta foi na noite anterior, então a reserva roda.
+    expect(
+      slotAlreadyCollected(
+        at('2026-10-04T21:08:00').toISOString(),
+        '12:00',
+        at('2026-10-05T15:30:00'),
+      ),
+    ).toBe(false);
+    // As 17h chegam às 20:40 depois de uma coleta das 12h atrasada (15:35): rodam.
+    expect(
+      slotAlreadyCollected(
+        at('2026-10-05T15:35:00').toISOString(),
+        '17:00',
+        at('2026-10-05T20:40:00'),
+      ),
+    ).toBe(false);
+    // As 21h chegam depois da meia-noite: a coleta das 21:05 de ontem conta.
+    expect(
+      slotAlreadyCollected(
+        at('2026-10-05T21:05:00').toISOString(),
+        '21:00',
+        at('2026-10-06T00:40:00'),
+      ),
+    ).toBe(true);
+    expect(slotAlreadyCollected(undefined, '12:00', at('2026-10-05T15:30:00'))).toBe(false);
   });
 });

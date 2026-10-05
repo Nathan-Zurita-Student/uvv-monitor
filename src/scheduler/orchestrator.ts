@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { localDateAt } from '../utils/dates.js';
 import type { AppConfig } from '../config/env.js';
 import {
   requireGoogleCredentials,
@@ -35,12 +36,21 @@ import { collectMoodleCalendar, reconcileEadCalendar } from '../moodle/calendar-
 import { createAiProvider, enrichItemsWithAi } from '../ai/service.js';
 
 /**
- * O agendamento do GitHub atrasa horas; quando ele chega depois de uma coleta disparada pelo bot,
- * não há o que repetir.
+ * O agendamento do GitHub é a reserva do disparo feito pelo Apps Script e costuma chegar horas
+ * depois. Se alguma coleta já terminou desde (horário - 30 min) da última ocorrência desse horário,
+ * ele não roda de novo (nem repete o painel das 12h ou o "amanhã" das 21h).
  */
-export function recentlyCollected(lastFinishedAt: string | undefined, now: Date): boolean {
+export function slotAlreadyCollected(
+  lastFinishedAt: string | undefined,
+  slot: DailySlot,
+  now: Date,
+): boolean {
   const finished = Date.parse(lastFinishedAt ?? '');
-  return Number.isFinite(finished) && now.getTime() - finished < 3 * 60 * 60_000;
+  if (!Number.isFinite(finished)) return false;
+  const [hours = 0, minutes = 0] = slot.split(':').map(Number);
+  let since = localDateAt(now, hours, minutes - 30);
+  if (since.getTime() > now.getTime()) since = localDateAt(now, hours, minutes - 30, -1);
+  return finished >= since.getTime();
 }
 
 /** Publicado há mais de uma semana: entra no histórico sem virar aviso de novidade. */
@@ -72,9 +82,9 @@ export async function runMonitor(
   await repository.initialize();
   if (
     process.env.GITHUB_EVENT_NAME === 'schedule' &&
-    recentlyCollected(await repository.lastRunFinishedAt(), now)
+    slotAlreadyCollected(await repository.lastRunFinishedAt(), slot, now)
   ) {
-    logger.info({ module: 'Scheduler' }, 'Coleta recente: execução agendada ignorada');
+    logger.info({ module: 'Scheduler', slot }, 'Horário já coletado: execução agendada ignorada');
     return;
   }
 

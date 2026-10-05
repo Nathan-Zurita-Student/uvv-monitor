@@ -29,7 +29,12 @@ import {
   sendReply,
   type AssistantEnv,
 } from './assistant.js';
-import { manualDispatch, manualDispatchText, scheduledDispatch } from './collector-dispatch.js';
+import {
+  manualDispatch,
+  manualDispatchText,
+  scheduledDispatch,
+  tokenProblemNotice,
+} from './collector-dispatch.js';
 import { configureConversation } from './configuration.js';
 import { GasCalendar } from './google-api.js';
 import {
@@ -343,8 +348,14 @@ export function processReminders(): void {
   }
   try {
     // Coleta no horário certo, sem depender do agendamento do GitHub (que atrasa horas).
-    const slot = scheduledDispatch(new Date());
-    if (slot) console.log(`Coleta das ${slot} disparada no GitHub Actions.`);
+    const now = new Date();
+    const dispatch = scheduledDispatch(now);
+    if (dispatch?.result === 'ok')
+      console.log(`Coleta das ${dispatch.slot} disparada no GitHub Actions.`);
+    if (dispatch?.result === 'rejected') {
+      const notice = tokenProblemNotice(now);
+      if (notice) sendHtml(props, notice);
+    }
   } catch (error) {
     console.error(`Disparo da coleta falhou: ${String(error)}`);
   }
