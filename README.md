@@ -8,8 +8,11 @@ ferramentas. Sem chave da OpenAI, botões, comandos, avisos e lembretes continua
 ## Estado do projeto
 
 - Login UVV validado contra o Portal real em 30/09/2026.
-- Coleta read-only de Mensagens, blogs e posts de Minhas Turmas, atividades do Ambiente Virtual,
-  Atendimento, Calendário de Atividades e Quadro de Horários.
+- Coleta read-only de Mensagens, murais completos de Minhas Turmas (todas as páginas do "Carregar
+  mais…", com data de cada post), arquivos anexados pelos professores, atividades do Ambiente
+  Virtual, Atendimento, Calendário de Atividades e Quadro de Horários (aulas por dia e horário).
+- Arquivos dos posts (PDF, DOCX, PPTX, ZIP, imagens) baixados e enviados no Telegram; o texto dos
+  legíveis é extraído para a IA e para o assistente responder sobre o material.
 - Gmail read-only, Google Calendar, Google Sheets e Telegram implementados; a validação externa
   depende da configuração OAuth/Bot do usuário.
 - Hash, deduplicação entre posts/calendário, mudanças de prazo, prioridade, tarefas interativas,
@@ -76,6 +79,16 @@ npm run portal:collect
 
 O Portal é estritamente read-only. O navegador não persiste cookies ou `storageState`.
 
+O que é lido a cada coleta:
+
+| Página                  | O que vira                                                                                                                                                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Quadro de Horários      | Aba `class_schedule`: um bloco por aula (disciplina, dia, início e fim; EAD marcada). Hoje/Semana mostram as aulas, e prova ou apresentação sem hora vai para a Agenda no horário da aula daquele dia (com aviso de que é provável). |
+| Minhas Turmas → Acessar | O mural inteiro de cada turma (o "Carregar mais…" é seguido até o fim), com a data de cada post. Posts antigos encontrados agora entram no histórico sem virar aviso.                                                                |
+| Post → Visualizar Post  | Texto completo, professor e os botões "Baixar Arquivo".                                                                                                                                                                              |
+| Arquivos dos posts      | Baixados com a sessão do Portal (nada fica em disco), enviados no Telegram e registrados em `portal_documents` com o `file_id` para reenviar; o texto extraído fica em `portal_document_texts`.                                      |
+| Aviso de aula cancelada | "Não haverá aula de Mobile amanhã dia 05/10" risca a aula daquele dia no bot e libera o horário.                                                                                                                                     |
+
 Comandos disponíveis:
 
 - `npm run portal:inspect`: verifica a entrada pública sem credenciais.
@@ -113,11 +126,18 @@ urgência ou um lembrete pedido. A assinatura de cada aviso fica na aba `notific
   escrito livremente ("18:30", "amanhã 9h", "15/10 14h", "em 2 horas").
 - **📖 Abrir** leva à atividade original.
 - `/painel` abre o menu: 📅 Hoje, 📆 Semana, 📝 Atividades, 📚 Provas, ⏰ Prazos, ✅ Concluídas,
-  📩 Novidades, 🎓 UVV, ⚠️ Atrasadas, 📌 Sem data, 🤖 Perguntar ao assistente e 🔄 Atualizar, com
-  ⬅️ Voltar em cada tela. Hoje e Semana juntam a Google Agenda, as aulas que você contou ao
-  assistente, os lembretes e o que vence, sem duplicar o que aparece em mais de uma fonte.
+  📩 Novidades, 🎓 UVV, ⚠️ Atrasadas, 📌 Sem data, 📂 Materiais, 🤖 Perguntar e 🔄 Atualizar, com
+  ⬅️ Voltar em cada tela. Hoje e Semana juntam a Google Agenda, as aulas do Quadro de Horários (e as
+  que você contou ao assistente), aulas canceladas pelo professor, os lembretes e o que vence, sem
+  duplicar o que aparece em mais de uma fonte. Prova sem hora mostra o horário provável da aula.
+- **📂 Materiais** (`/materiais`): os arquivos que os professores postaram, por matéria e os mais
+  recentes; um toque reenvia os arquivos no chat (pelo `file_id` do Telegram, sem baixar de novo).
+- Arquivos novos chegam sozinhos: assim que o monitor encontra um anexo novo no mural, ele chega no
+  chat com a matéria e o título do post. Na primeira coleta, todo o material já postado chega
+  organizado por matéria.
 - Atalhos opcionais: `/hoje`, `/semana`, `/provas`, `/atividades`, `/prazos`, `/agenda`,
-  `/novidades`, `/concluidas`, `/uvv`. Tudo isso também funciona escrevendo normalmente.
+  `/novidades`, `/materiais`, `/concluidas`, `/uvv`. Tudo isso também funciona escrevendo
+  normalmente.
 
 ### Assistente (conversa natural)
 
@@ -131,7 +151,10 @@ Qualquer mensagem que não seja comando vai para o assistente, que responde como
 
 Ele entende datas como "amanhã", "sexta que vem", "dia 15" ou "depois da aula" no fuso
 `America/Sao_Paulo`, mantém o contexto entre mensagens ("que horas?", "me lembra dois dias antes")
-e só usa listas quando fazem sentido.
+e só usa listas quando fazem sentido. Também abre a matéria como no Portal ("como tá Mobile?",
+"o que o professor postou em Cálculo?"), lê o material ("o que cai na prova segundo o PDF?",
+"o que o trabalho de LFA pede?"), manda os arquivos ("me manda o PDF da unidade 3") e responde
+sobre qualquer e-mail do Gmail, não só os da faculdade.
 
 ```text
 Telegram → webhook (Apps Script) → assistente (src/assistant/agent.ts) ⇄ GPT
@@ -139,6 +162,7 @@ Telegram → webhook (Apps Script) → assistente (src/assistant/agent.ts) ⇄ G
                                           ├─ Google Agenda (consultar, criar, alterar, remover)
                                           ├─ Gmail (buscar e ler, somente leitura)
                                           ├─ Portal/AVA/e-mails já coletados (planilha)
+                                          ├─ Quadro de Horários, murais e arquivos dos professores
                                           ├─ prioridades, alertas, conflitos e horários livres
                                           ├─ lembretes no Telegram
                                           └─ memória (aulas, professores, preferências)
@@ -146,7 +170,8 @@ Telegram → webhook (Apps Script) → assistente (src/assistant/agent.ts) ⇄ G
 
 - **Ferramentas, não contexto gigante:** o GPT recebe só a data, a memória curta e alertas; ele
   decide o que consultar (`get_calendar_events`, `get_academic_tasks`, `get_upcoming_exams`,
-  `get_class_schedule`, `get_academic_context`, `get_free_time`, `get_ava_updates`,
+  `get_class_schedule`, `get_discipline_overview`, `read_academic_item`, `read_class_material`,
+  `send_class_files`, `get_academic_context`, `get_free_time`, `get_ava_updates`,
   `search_gmail`, `read_email`, `create_calendar_event`, `update_calendar_event`,
   `delete_calendar_event`, `create_reminder`, `cancel_reminder`, `mark_task_completed`,
   `save_memory`, `forget_memory`).
