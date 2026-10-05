@@ -40,7 +40,9 @@ const configured = await fetch(url, {
   signal: AbortSignal.timeout(60000),
 });
 const body = await configured.text();
-if (!configured.ok || !/"configured"\s*:\s*true/.test(body))
+// Versões anteriores usam HtmlService, que escapa o JSON dentro de userHtml.
+const confirmation = body.replace(/\\x22|\\u0022|&quot;|&#34;/gi, '"').replace(/\\"/g, '"');
+if (!configured.ok || !/"configured"\s*:\s*true/.test(confirmation))
   throw new Error(
     'O Apps Script ainda não confirmou a configuração. Publique a versão atual de Bot.gs.',
   );
@@ -69,7 +71,7 @@ const calendar = await fetch(
 if (!calendar.ok) throw new Error(`A agenda recusou a verificação (HTTP ${calendar.status}).`);
 console.log('Acesso à agenda verificado com a autorização existente.');
 console.log(
-  /"openaiKeyConfigured"\s*:\s*true/.test(body)
+  /"openaiKeyConfigured"\s*:\s*true/.test(confirmation)
     ? 'Chave GPT cadastrada. Conversa pronta para teste.'
     : '::warning::Falta cadastrar OPENAI_API_KEY no GitHub ou nas propriedades do Apps Script.',
 );
