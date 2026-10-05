@@ -42,10 +42,20 @@ const configured = await fetch(url, {
 const body = await configured.text();
 // Versões anteriores usam HtmlService, que escapa o JSON dentro de userHtml.
 const confirmation = body.replace(/\\x22|\\u0022|&quot;|&#34;/gi, '"').replace(/\\"/g, '"');
-if (!configured.ok || !/"configured"\s*:\s*true/.test(confirmation))
+if (!configured.ok || !/"configured"\s*:\s*true/.test(confirmation)) {
+  console.log(
+    JSON.stringify({
+      status: configured.status,
+      contentType: configured.headers.get('content-type'),
+      hasConfigurationMarker: /configured|openaiKeyConfigured/.test(body),
+      isGoogleError: /error|Exception|erro|exceção/i.test(body),
+      requiresLogin: /accounts\.google\.com|ServiceLogin/.test(body),
+    }),
+  );
   throw new Error(
     'O Apps Script ainda não confirmou a configuração. Publique a versão atual de Bot.gs.',
   );
+}
 console.log('Configuração Google sincronizada com o bot.');
 // Confere a autorização real sem criar eventos nem imprimir conteúdo da agenda.
 const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
