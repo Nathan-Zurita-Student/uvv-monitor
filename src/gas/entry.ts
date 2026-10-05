@@ -29,6 +29,7 @@ import {
   sendReply,
   type AssistantEnv,
 } from './assistant.js';
+import { manualDispatch, manualDispatchText, scheduledDispatch } from './collector-dispatch.js';
 import { configureConversation } from './configuration.js';
 import { GasCalendar } from './google-api.js';
 import {
@@ -224,6 +225,15 @@ export function doPost(event: {
       ? decodeCallback(update.callback_query.data ?? '')
       : undefined;
     const text = update.message?.text?.trim();
+    // "Verificar Portal agora" / "/atualizar": dispara a coleta no GitHub Actions.
+    if (action?.type === 'sync' || /^\/(?:atualizar|verificar)(?:@\w+)?$/i.test(text ?? '')) {
+      cache.put(seenKey, '1', 21_600);
+      if (update.callback_query && !quick) {
+        sendEffects([{ type: 'answer', callbackId: update.callback_query.id }], props);
+      }
+      sendHtml(props, manualDispatchText[manualDispatch()]);
+      return ok;
+    }
     if (
       action?.type === 'confirm' ||
       action?.type === 'assist' ||
@@ -330,6 +340,13 @@ export function processReminders(): void {
   } catch (error) {
     // O aviso do dia é um extra: uma falha aqui não afeta os lembretes acima.
     console.error(`Aviso proativo falhou: ${String(error)}`);
+  }
+  try {
+    // Coleta no horário certo, sem depender do agendamento do GitHub (que atrasa horas).
+    const slot = scheduledDispatch(new Date());
+    if (slot) console.log(`Coleta das ${slot} disparada no GitHub Actions.`);
+  } catch (error) {
+    console.error(`Disparo da coleta falhou: ${String(error)}`);
   }
 }
 

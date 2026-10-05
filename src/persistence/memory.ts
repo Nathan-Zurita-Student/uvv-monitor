@@ -80,6 +80,16 @@ export class InMemoryAcademicRepository implements AcademicRepository {
     return Promise.resolve();
   }
 
+  lastRunFinishedAt(): Promise<string | undefined> {
+    return Promise.resolve(
+      this.runs
+        .map((run) => run.finishedAt ?? '')
+        .filter(Boolean)
+        .sort()
+        .at(-1),
+    );
+  }
+
   getTelegramState(): Promise<TelegramState> {
     return Promise.resolve(structuredClone(this.telegramState));
   }

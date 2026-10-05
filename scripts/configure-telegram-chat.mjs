@@ -29,6 +29,8 @@ const configuration = Object.fromEntries(
     'GOOGLE_CLIENT_SECRET',
     'GOOGLE_REFRESH_TOKEN',
     'GOOGLE_CALENDAR_ID',
+    // Opcional: token do GitHub (só Actions deste repositório) para o bot disparar a coleta.
+    'MONITOR_DISPATCH_TOKEN',
   ]
     .filter((name) => process.env[name])
     .map((name) => [name, process.env[name]]),

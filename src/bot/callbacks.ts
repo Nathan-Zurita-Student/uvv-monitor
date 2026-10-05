@@ -46,7 +46,9 @@ export type CallbackAction =
   /** Pede ao assistente uma ajuda ligada à atividade (ex.: organizar o estudo para a prova). */
   | { type: 'assist'; itemId: string; intent: AssistIntent }
   /** Reenvia arquivos dos professores: todos de uma disciplina ou um arquivo. */
-  | { type: 'files'; scope: 'discipline' | 'file'; key: string };
+  | { type: 'files'; scope: 'discipline' | 'file'; key: string }
+  /** Pede uma verificação do Portal/AVA/Gmail agora (dispara a coleta no GitHub Actions). */
+  | { type: 'sync' };
 
 export const assistIntents = ['study'] as const;
 export type AssistIntent = (typeof assistIntents)[number];
@@ -139,6 +141,9 @@ export function encodeCallback(action: CallbackAction): string {
     case 'files':
       value = `mf|${action.scope === 'file' ? 'f' : 'd'}|${action.key}`;
       break;
+    case 'sync':
+      value = 'sy';
+      break;
   }
   // Todos os campos são ASCII, então caracteres = bytes.
   if (value.length > 64) {
@@ -163,6 +168,7 @@ export function decodeCallback(data: string): CallbackAction | undefined {
     return status ? { type: 'legacy', itemId: legacy[1].toUpperCase(), status } : undefined;
   }
   if (data === 'x') return { type: 'noop' };
+  if (data === 'sy') return { type: 'sync' };
   const [code, first = '', second = '', third] = data.split('|');
   if (code === 'v' && isView(first)) return { type: 'view', view: first, refresh: second === '1' };
   if (code === 'p' && /^[A-Za-z0-9]{4,12}$/.test(first) && /^-?\d{1,3}$/.test(second)) {

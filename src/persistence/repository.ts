@@ -19,6 +19,8 @@ export interface AcademicRepository {
   listBatches(): Promise<TelegramBatch[]>;
   insertBatch(batch: TelegramBatch): Promise<void>;
   appendRunHistory(run: RunHistory): Promise<void>;
+  /** Fim da coleta mais recente (ISO), para não repetir uma coleta que acabou de acontecer. */
+  lastRunFinishedAt(): Promise<string | undefined>;
   getTelegramState(): Promise<TelegramState>;
   setTelegramState(state: TelegramState): Promise<void>;
   listClassSchedule(): Promise<ClassSlot[]>;

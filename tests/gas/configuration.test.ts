@@ -48,7 +48,11 @@ describe('configuração segura da conversa', () => {
       GOOGLE_REFRESH_TOKEN: 'refresh',
       unrelated: 'ignore',
     });
-    expect(JSON.parse(result)).toEqual({ configured: true, openaiKeyConfigured: true });
+    expect(JSON.parse(result)).toEqual({
+      configured: true,
+      openaiKeyConfigured: true,
+      dispatchConfigured: false,
+    });
     expect(values.get('OPENAI_API_KEY')).toBe('existing-key');
     expect(values.get('GPT_CHAT_MONTHLY_BUDGET_USD')).toBe('1');
     expect(values.has('unrelated')).toBe(false);

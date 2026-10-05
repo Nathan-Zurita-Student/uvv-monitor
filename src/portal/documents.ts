@@ -19,7 +19,9 @@ function tidy(text: string): string {
 
 export async function extractPdfText(bytes: Uint8Array): Promise<{ pages: number; text: string }> {
   // verbosity 0: sem avisos de fonte no log (o texto sai igual).
-  const document = await getDocument({ data: bytes, verbosity: 0 }).promise;
+  // Uma cópia: o pdfjs transfere (desliga) o buffer recebido, e o original ainda vai ser enviado
+  // no Telegram.
+  const document = await getDocument({ data: new Uint8Array(bytes), verbosity: 0 }).promise;
   const parts: string[] = [];
   let length = 0;
   try {

@@ -96,7 +96,10 @@ const homeMenu = (agenda: Agenda): Keyboard => [
       ]
     : []),
   [viewButton('📂 Materiais', 'files'), viewButton('🤖 Perguntar', 'ask')],
-  [viewButton('🔄 Atualizar', 'home', true)],
+  [
+    viewButton('🔄 Atualizar', 'home', true),
+    { text: '🔍 Verificar Portal agora', callback_data: encodeCallback({ type: 'sync' }) },
+  ],
 ];
 
 /** Arquivos já enviados no Telegram (os que podem ser reenviados pelo file_id). */

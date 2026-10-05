@@ -509,6 +509,7 @@ export function helpText(): string {
     'Eu acompanho o Portal (quadro de horários, murais das matérias e arquivos dos professores), o AVA, seus e-mails e sua Google Agenda, e te aviso do que importa. Os arquivos que os professores postam chegam aqui no chat.',
     '',
     '• Atalhos: /hoje /semana /provas /atividades /prazos /agenda /novidades /materiais /painel',
+    '• /atualizar verifica o Portal, o AVA e seus e-mails na hora (além das verificações das 12h, 17h e 21h)',
     '• Nos avisos, use os botões pra concluir, lembrar depois ou ignorar',
     '• /gastos mostra o consumo do GPT; /esquecer limpa o contexto da conversa',
   ].join('\n');

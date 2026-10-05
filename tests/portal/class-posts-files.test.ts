@@ -194,4 +194,24 @@ describe('mural da turma e arquivos dos posts', () => {
     });
     expect(documentKind('Unidade_03.pdf', 'application/octet-stream')).toBe('pdf');
   });
+
+  it('lê o PDF sem inutilizar os bytes que ainda vão para o Telegram', async () => {
+    const pdf = [
+      '%PDF-1.4',
+      '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj',
+      '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj',
+      '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 400 100]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj',
+      '4 0 obj<</Length 66>>stream',
+      'BT /F1 12 Tf 20 50 Td (Enunciado do trabalho de Linguagens Formais) Tj ET',
+      'endstream endobj',
+      '5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj',
+      'trailer<</Root 1 0 R>>',
+      '%%EOF',
+    ].join('\n');
+    const bytes = new Uint8Array(Buffer.from(pdf, 'latin1'));
+    const read = await readDocument(bytes, 'enunciado.pdf', 'application/pdf');
+    expect(read.text).toContain('Enunciado do trabalho de Linguagens Formais');
+    expect(bytes.byteLength).toBe(pdf.length);
+    expect(new Blob([new Uint8Array(bytes)]).size).toBe(pdf.length);
+  });
 });

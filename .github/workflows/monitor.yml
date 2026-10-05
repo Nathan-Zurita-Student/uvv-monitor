@@ -1,10 +1,13 @@
 name: UVV Monitor
 
+# O Apps Script dispara esta coleta às 12h, 17h e 21h (workflow_dispatch, MONITOR_DISPATCH_TOKEN).
+# O agendamento abaixo é a reserva: fora da hora cheia (que o GitHub atrasa mais) e ignorado se
+# uma coleta terminou há menos de 3 horas.
 on:
   schedule:
-    - cron: '0 15 * * *'
-    - cron: '0 20 * * *'
-    - cron: '0 0 * * *'
+    - cron: '41 14 * * *'
+    - cron: '41 19 * * *'
+    - cron: '41 23 * * *'
   workflow_dispatch:
     inputs:
       slot:
@@ -16,6 +19,11 @@ on:
 
 permissions:
   contents: read
+
+# Uma coleta por vez: um disparo manual e um agendado não enviam a mesma coisa duas vezes.
+concurrency:
+  group: uvv-monitor
+  cancel-in-progress: false
 
 jobs:
   monitor:
@@ -58,9 +66,9 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "RUN_SLOT=${{ inputs.slot }}" >> "$GITHUB_ENV"
-          elif [[ "${{ github.event.schedule }}" == "0 15 * * *" ]]; then
+          elif [[ "${{ github.event.schedule }}" == "41 14 * * *" ]]; then
             echo "RUN_SLOT=12:00" >> "$GITHUB_ENV"
-          elif [[ "${{ github.event.schedule }}" == "0 20 * * *" ]]; then
+          elif [[ "${{ github.event.schedule }}" == "41 19 * * *" ]]; then
             echo "RUN_SLOT=17:00" >> "$GITHUB_ENV"
           else
             echo "RUN_SLOT=21:00" >> "$GITHUB_ENV"

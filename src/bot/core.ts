@@ -77,6 +77,8 @@ function instantText(action: CallbackAction): string | undefined {
       return 'Deixa comigo, já vou organizar 📚';
     case 'files':
       return '📎 Já vou mandar';
+    case 'sync':
+      return '🔍 Indo ao Portal…';
     case 'legacy':
     case 'confirm':
       return undefined;
@@ -245,6 +247,9 @@ function handleCallback(
     case 'assist':
       // Tratados pelo assistente no Apps Script; aqui (modo de reserva) não há GPT.
       return [answer('Isso precisa do assistente ativo no Apps Script.')];
+    case 'sync':
+      // Tratado no Apps Script (dispara a coleta); aqui, modo de reserva sem webhook.
+      return [answer('A verificação sob demanda precisa do bot no Apps Script.')];
     case 'files': {
       const files = filesFor(context, action);
       if (files.length === 0) return [answer('Não achei esse arquivo. Abra /materiais de novo.')];

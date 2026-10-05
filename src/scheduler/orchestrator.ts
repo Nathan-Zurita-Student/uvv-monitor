@@ -34,6 +34,15 @@ import { logger } from '../utils/logger.js';
 import { collectMoodleCalendar, reconcileEadCalendar } from '../moodle/calendar-feed.js';
 import { createAiProvider, enrichItemsWithAi } from '../ai/service.js';
 
+/**
+ * O agendamento do GitHub atrasa horas; quando ele chega depois de uma coleta disparada pelo bot,
+ * não há o que repetir.
+ */
+export function recentlyCollected(lastFinishedAt: string | undefined, now: Date): boolean {
+  const finished = Date.parse(lastFinishedAt ?? '');
+  return Number.isFinite(finished) && now.getTime() - finished < 3 * 60 * 60_000;
+}
+
 /** Publicado há mais de uma semana: entra no histórico sem virar aviso de novidade. */
 export function isOldNews(item: AcademicItem, now: Date): boolean {
   const received = item.metadata?.receivedAt;
@@ -61,6 +70,13 @@ export async function runMonitor(
   const repository = GoogleSheetsAcademicRepository.fromCredentials(googleCredentials);
   const telegram = new TelegramClient(telegramCredentials.botToken, telegramCredentials.chatId);
   await repository.initialize();
+  if (
+    process.env.GITHUB_EVENT_NAME === 'schedule' &&
+    recentlyCollected(await repository.lastRunFinishedAt(), now)
+  ) {
+    logger.info({ module: 'Scheduler' }, 'Coleta recente: execução agendada ignorada');
+    return;
+  }
 
   if (!config.TELEGRAM_WEBHOOK_ENABLED) {
     try {

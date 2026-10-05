@@ -186,6 +186,14 @@ export class GoogleSheetsAcademicRepository implements AcademicRepository {
     });
   }
 
+  async lastRunFinishedAt(): Promise<string | undefined> {
+    return (await this.rows('run_history'))
+      .map((row) => row[2] ?? '')
+      .filter(Boolean)
+      .sort()
+      .at(-1);
+  }
+
   async getTelegramState(): Promise<TelegramState> {
     const rows = await this.rows('telegram_state');
     const panelMessageId = Number(rows[0]?.[1] ?? 0);
