@@ -45,8 +45,31 @@ if (!configured.ok || !/"configured"\s*:\s*true/.test(body))
     'O Apps Script ainda não confirmou a configuração. Publique a versão atual de Bot.gs.',
   );
 console.log('Configuração Google sincronizada com o bot.');
+// Confere a autorização real sem criar eventos nem imprimir conteúdo da agenda.
+const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    client_secret: process.env.GOOGLE_CLIENT_SECRET,
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    grant_type: 'refresh_token',
+  }),
+});
+const token = await tokenResponse.json();
+if (!tokenResponse.ok || !token.access_token)
+  throw new Error('A autorização Google existente foi recusada.');
+const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+const calendar = await fetch(
+  `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?maxResults=1`,
+  {
+    headers: { authorization: `Bearer ${token.access_token}` },
+  },
+);
+if (!calendar.ok) throw new Error(`A agenda recusou a verificação (HTTP ${calendar.status}).`);
+console.log('Acesso à agenda verificado com a autorização existente.');
 console.log(
   /"openaiKeyConfigured"\s*:\s*true/.test(body)
     ? 'Chave GPT cadastrada. Conversa pronta para teste.'
-    : 'Falta cadastrar OPENAI_API_KEY no GitHub ou nas propriedades do Apps Script.',
+    : '::warning::Falta cadastrar OPENAI_API_KEY no GitHub ou nas propriedades do Apps Script.',
 );
