@@ -41,7 +41,12 @@ const configured = await fetch(url, {
 });
 const body = await configured.text();
 // Versões anteriores usam HtmlService, que escapa o JSON dentro de userHtml.
-const confirmation = body.replace(/\\x22|\\u0022|&quot;|&#34;/gi, '"').replace(/\\"/g, '"');
+const confirmation = body
+  .replace(/\\x([\da-f]{2})|\\u([\da-f]{4})/gi, (_, hex, unicode) =>
+    String.fromCharCode(parseInt(hex || unicode, 16)),
+  )
+  .replace(/&quot;|&#34;/gi, '"')
+  .replace(/\\"/g, '"');
 if (!configured.ok || !/"configured"\s*:\s*true/.test(confirmation)) {
   console.log(
     JSON.stringify({
