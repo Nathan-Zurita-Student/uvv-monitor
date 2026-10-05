@@ -92,3 +92,8 @@ console.log(
     ? 'Chave GPT cadastrada. Conversa pronta para teste.'
     : '::warning::Falta cadastrar OPENAI_API_KEY no GitHub ou nas propriedades do Apps Script.',
 );
+console.log(
+  /"dispatchConfigured"\s*:\s*true/.test(confirmation)
+    ? 'Disparo das coletas pelo bot ativado (12h, 17h, 21h e "Verificar Portal agora").'
+    : '::warning::Falta MONITOR_DISPATCH_TOKEN: as coletas ficam só no agendamento do GitHub.',
+);
