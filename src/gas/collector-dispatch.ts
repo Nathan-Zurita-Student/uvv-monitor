@@ -3,7 +3,7 @@
  *
  * O agendamento do GitHub ("schedule") atrasa horas em períodos de carga; um disparo manual
  * começa assim que há máquina. O acionador de 5 minutos do Apps Script chama `scheduledDispatch`,
- * que dispara nos horários do monitor (12h, 17h, 21h), e o bot oferece "Verificar Portal agora".
+ * que antecipa as coletas dos resumos (12h, 17h, 20h), e o bot oferece "Verificar Portal agora".
  * Precisa de um token do GitHub com permissão só de Actions neste repositório, na propriedade
  * MONITOR_DISPATCH_TOKEN (sem ela, nada é disparado e o agendamento do GitHub continua valendo).
  */
@@ -19,7 +19,7 @@ const MANUAL_KEY = 'monitor.manual-dispatch';
 /** Atualização pedida no bot: no máximo uma a cada 10 minutos. */
 const MANUAL_COOLDOWN_SECONDS = 600;
 
-export const collectionSlots = ['12:00', '17:00', '21:00'] as const;
+export const collectionSlots = ['12:00', '17:00', '20:00'] as const;
 export type CollectionSlot = (typeof collectionSlots)[number];
 
 function minutes(time: string): number {
@@ -32,8 +32,9 @@ export function dueSlot(now: Date, lastDispatched: string | null): CollectionSlo
   const current = minutes(localTime(now));
   const today = localDateKey(now);
   return collectionSlots.find((slot) => {
-    const delta = current - minutes(slot);
-    return delta >= 0 && delta < 50 && lastDispatched !== `${today} ${slot}`;
+    // Coletar antes do aviso: a mensagem do horário não precisa esperar o Playwright.
+    const delta = current - (minutes(slot) - 20);
+    return delta >= 0 && delta < 70 && lastDispatched !== `${today} ${slot}`;
   });
 }
 
@@ -127,7 +128,7 @@ export const manualDispatchText: Record<ManualDispatch, string> = {
     '🔄 Fui verificar o Portal, o AVA e seus e-mails agora. Em uns 5 minutos chega aqui o que tiver de novo (arquivos dos professores inclusive).',
   recent: '🔄 Já estou verificando o Portal; daqui a pouco chega o que tiver de novo.',
   unavailable:
-    'A verificação sob demanda ainda não foi ativada (falta o token do GitHub no Apps Script). As verificações automáticas continuam às 12h, 17h e 21h.',
+    'A verificação sob demanda ainda não foi ativada (falta o token do GitHub no Apps Script). As coletas automáticas continuam antes dos resumos das 12h, 17h e 20h.',
   failed:
     'O GitHub não aceitou o pedido agora. Tenta de novo em alguns minutos; as verificações automáticas continuam.',
 };

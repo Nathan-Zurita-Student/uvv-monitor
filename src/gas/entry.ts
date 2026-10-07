@@ -36,6 +36,13 @@ import {
   tokenProblemNotice,
 } from './collector-dispatch.js';
 import { configureConversation } from './configuration.js';
+import {
+  digestAuthorized,
+  DIGEST_ENABLED,
+  DIGEST_TOKEN,
+  sendScheduledDigest,
+} from './daily-digest.js';
+import { renderDailyDigest } from '../bot/daily-digest.js';
 import { GasCalendar } from './google-api.js';
 import {
   buildSnapshot,
@@ -194,6 +201,14 @@ export function doPost(event: {
   const ok = HtmlService.createHtmlOutput('ok');
   try {
     const props = properties();
+    // O agendador recebe só uma chave restrita; nunca a chave do webhook do Telegram.
+    const body: unknown = JSON.parse(event.postData?.contents ?? '{}');
+    if (body && typeof body === 'object' && 'uvv' in body && body.uvv === 'daily_digest') {
+      const token = 'token' in body ? body.token : undefined;
+      if (!digestAuthorized(token)) return HtmlService.createHtmlOutput('unauthorized');
+      const result = withLock(() => sendScheduledDigest(props));
+      return HtmlService.createHtmlOutput(result);
+    }
     if (event.parameter?.secret !== props.webhookSecret)
       return HtmlService.createHtmlOutput('unauthorized');
     const update = JSON.parse(event.postData?.contents ?? '{}') as TelegramUpdate & {
@@ -309,6 +324,12 @@ export function doPost(event: {
  */
 export function processReminders(): void {
   const props = properties();
+  // Primeira etapa, independente de lembretes, GPT e fila do GitHub.
+  try {
+    withLock(() => sendScheduledDigest(props));
+  } catch (error) {
+    console.error(`Resumo diário não enviado: ${error instanceof Error ? error.message : 'erro'}`);
+  }
   withLock(() => {
     const now = new Date();
     const state = readState();
@@ -362,6 +383,44 @@ export function processReminders(): void {
 }
 
 export { conversationInfo };
+
+/** Ativação explícita após publicar. Não devolve a credencial restrita em logs. */
+export function setupDailyDigests(): string {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty(DIGEST_TOKEN))
+    props.setProperty(DIGEST_TOKEN, Utilities.getUuid() + Utilities.getUuid());
+  props.setProperty(DIGEST_ENABLED, 'true');
+  return dailyDigestInfo();
+}
+
+export function dailyDigestInfo(): string {
+  const props = PropertiesService.getScriptProperties();
+  return JSON.stringify({
+    enabled: props.getProperty(DIGEST_ENABLED) === 'true',
+    tokenConfigured: Boolean(props.getProperty(DIGEST_TOKEN)),
+    hours: ['12:00', '17:00', '20:00'],
+    timezone: 'America/Sao_Paulo',
+    deliveries: Object.entries(props.getProperties())
+      .filter(([key]) => key.startsWith('digest.sent.'))
+      .map(([key, at]) => ({ slot: key.replace('digest.sent.', ''), at })),
+  });
+}
+
+/** Teste no próprio chat, sem marcar nenhum horário como entregue. */
+export function sendDailyDigestTest(): string {
+  const props = properties();
+  withLock(() => {
+    const now = new Date();
+    const snapshot = buildSnapshot(props.sheetId);
+    const rendered = renderDailyDigest(renderContextOf(snapshot, now), '20:00', snapshot.lastRun);
+    sendHtml(
+      props,
+      `🧪 <b>Teste do novo resumo independente da coleta</b>\n\n${rendered.text}`,
+      rendered.keyboard,
+    );
+  });
+  return 'Resumo de teste enviado; horários diários preservados.';
+}
 
 /** Relê a planilha e renova a cópia em cache; devolve um resumo para conferência no editor. */
 export function refreshCache(): string {

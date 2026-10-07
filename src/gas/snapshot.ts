@@ -22,6 +22,8 @@ import { SheetStore } from './sheet-store.js';
 export interface Snapshot {
   builtAt: string;
   lastSyncAt?: string;
+  /** Situação das fontes na última coleta, sem conteúdo ou erros sensíveis. */
+  lastRun?: { portal: string; gmail: string; calendar: string };
   items: string[][];
   statuses: string[][];
   reminders: string[][];
@@ -163,13 +165,22 @@ export function buildSnapshot(sheetId: string): Snapshot {
   const store = SheetStore.open(sheetId);
   const finished = store
     .rows('run_history')
-    .map((row) => row[2] ?? '')
-    .filter(Boolean)
-    .sort();
-  const lastSyncAt = finished[finished.length - 1];
+    .filter((row) => Number.isFinite(Date.parse(row[2] ?? '')))
+    .sort((a, b) => Date.parse(a[2]!) - Date.parse(b[2]!));
+  const latest = finished.at(-1);
+  const lastSyncAt = latest?.[2];
   const snapshot: Snapshot = {
     builtAt: new Date().toISOString(),
     ...(lastSyncAt ? { lastSyncAt } : {}),
+    ...(latest
+      ? {
+          lastRun: {
+            portal: latest[3] ?? 'NOT_STARTED',
+            gmail: latest[4] ?? 'NOT_STARTED',
+            calendar: latest[5] ?? 'NOT_STARTED',
+          },
+        }
+      : {}),
     items: store.rows('detected_items'),
     statuses: store.rows('user_task_status'),
     reminders: store.rows('reminders'),

@@ -16,6 +16,29 @@ function processReminders() {
   return UVVBot.processReminders();
 }
 
+/** Ativa resumos independentes às 12h, 17h e 20h; mantém o acionador de cinco minutos como reserva. */
+function setupDailyDigests() {
+  const exists = ScriptApp.getProjectTriggers().some(
+    (trigger) => trigger.getHandlerFunction() === 'processReminders',
+  );
+  if (!exists) ScriptApp.newTrigger('processReminders').timeBased().everyMinutes(5).create();
+  const result = UVVBot.setupDailyDigests();
+  console.log(result);
+  return result;
+}
+
+function dailyDigestInfo() {
+  const result = UVVBot.dailyDigestInfo();
+  console.log(result);
+  return result;
+}
+
+function sendDailyDigestTest() {
+  const result = UVVBot.sendDailyDigestTest();
+  console.log(result);
+  return result;
+}
+
 /**
  * Registra o webhook do Telegram na URL /exec publicada (propriedade WEB_APP_URL). No editor,
  * ScriptApp.getService().getUrl() devolve a URL de teste /dev, que exige login do Google.

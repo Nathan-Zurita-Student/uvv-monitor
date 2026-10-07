@@ -106,8 +106,9 @@ export async function runMonitor(
   const storedDocuments = await repository.listPortalDocuments();
   let downloaded: DownloadedDocument[] = [];
   let classSlots: ClassSlot[] | undefined;
-  const portalSession = await createPortalBrowserSession();
+  let portalSession: Awaited<ReturnType<typeof createPortalBrowserSession>> | undefined;
   try {
+    portalSession = await createPortalBrowserSession();
     await ensurePortalAuthenticated(portalSession.page, requirePortalCredentials(config), {
       timeoutMs: config.PORTAL_TIMEOUT_MS,
       diagnosticsDirectory: config.DIAGNOSTICS_DIR,
@@ -139,7 +140,11 @@ export async function runMonitor(
     run.portalStatus = code === 'CAPTCHA_OR_MFA' ? 'NOT_VERIFIED' : 'FAILED';
     run.errors.push(`Portal: ${error instanceof Error ? error.message : 'erro'}`);
   } finally {
-    await portalSession.close();
+    try {
+      await portalSession?.close();
+    } catch {
+      run.errors.push('Portal: falha ao fechar navegador');
+    }
   }
 
   if (config.MOODLE_CALENDAR_URL) {
@@ -306,6 +311,7 @@ export async function runMonitor(
       context,
       plan,
       weekly: isWeeklyReviewRun(now, slot),
+      dailyDigestExternal: config.DAILY_DIGEST_EXTERNAL,
     })),
   );
   logger.info(

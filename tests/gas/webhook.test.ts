@@ -172,11 +172,73 @@ beforeEach(() => {
     base64Decode: (encoded: string) => Array.from(Buffer.from(encoded, 'base64')),
     base64DecodeWebSafe: (encoded: string) => Array.from(Buffer.from(encoded, 'base64url')),
     sleep: () => undefined,
+    getUuid: () => '11111111-1111-4111-8111-111111111111',
   });
   vi.stubGlobal('UrlFetchApp', {
     fetch: fetchStub,
     fetchAll: (list: Array<{ url: string; method?: string }>) =>
       list.map((entry) => fetchStub(entry.url, entry)),
+  });
+});
+
+describe('envio diário agendado', () => {
+  const digestPost = (token: string) =>
+    doPost({ postData: { contents: JSON.stringify({ uvv: 'daily_digest', token }) } });
+
+  it('usa credencial separada e rejeita a chave normal do webhook', () => {
+    props.set('DAILY_DIGEST_TOKEN', 'x'.repeat(64));
+    props.set('DAILY_DIGEST_ENABLED', 'true');
+    expect(digestPost('test-secret')).toBe('unauthorized');
+    expect(messages()).toHaveLength(0);
+    expect(digestPost('x'.repeat(64))).toBe('sent');
+    expect(messages()).toHaveLength(1);
+  });
+
+  it('chamadas repetidas e fallback não duplicam; outro horário envia de novo', () => {
+    props.set('DAILY_DIGEST_TOKEN', 'x'.repeat(64));
+    props.set('DAILY_DIGEST_ENABLED', 'true');
+    expect(digestPost('x'.repeat(64))).toBe('sent');
+    cache.clear(); // cache efêmero não é o comprovante
+    expect(digestPost('x'.repeat(64))).toBe('idle');
+    processReminders();
+    expect(messages()).toHaveLength(1);
+    vi.setSystemTime(new Date('2026-10-05T20:00:00Z'));
+    expect(digestPost('x'.repeat(64))).toBe('sent');
+    expect(messages()).toHaveLength(2);
+  });
+
+  it('falha de Telegram não marca entregue e permite tentar novamente', () => {
+    props.set('DAILY_DIGEST_TOKEN', 'x'.repeat(64));
+    props.set('DAILY_DIGEST_ENABLED', 'true');
+    vi.stubGlobal('UrlFetchApp', { fetch: () => respond('falha temporária', 500) });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    digestPost('x'.repeat(64));
+    expect(props.has('digest.sent.2026-10-05 12:00')).toBe(false);
+    vi.stubGlobal('UrlFetchApp', { fetch: fetchStub });
+    expect(digestPost('x'.repeat(64))).toBe('sent');
+    expect(props.has('digest.sent.2026-10-05 12:00')).toBe(true);
+    consoleError.mockRestore();
+  });
+
+  it('relê status e mostra a situação parcial da última coleta', () => {
+    props.set('DAILY_DIGEST_TOKEN', 'x'.repeat(64));
+    props.set('DAILY_DIGEST_ENABLED', 'true');
+    sheets.get('user_task_status')!.push(['UVV-123', 'DONE', new Date().toISOString(), 'TELEGRAM']);
+    sheets
+      .get('run_history')!
+      .push([
+        'run',
+        '2026-10-05T14:40:00Z',
+        '2026-10-05T14:50:00Z',
+        'PARTIAL',
+        'SUCCESS',
+        'SUCCESS',
+        '1',
+        '[]',
+      ]);
+    expect(digestPost('x'.repeat(64))).toBe('sent');
+    expect(messages()[0]?.payload.text).toContain('Portal/AVA verificado parcialmente');
+    expect(messages()[0]?.payload.text).not.toContain('Atividade Online Pontuada');
   });
 });
 

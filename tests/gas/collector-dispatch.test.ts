@@ -5,13 +5,15 @@ import { slotAlreadyCollected } from '../../src/scheduler/orchestrator.js';
 describe('coleta disparada pelo Apps Script', () => {
   it('dispara cada horário uma vez, logo depois da hora', () => {
     const at = (time: string) => new Date(`2026-10-05T${time}:00-03:00`);
-    expect(dueSlot(at('11:58'), null)).toBeUndefined();
+    expect(dueSlot(at('11:39'), null)).toBeUndefined();
+    expect(dueSlot(at('11:40'), null)).toBe('12:00');
     expect(dueSlot(at('12:03'), null)).toBe('12:00');
     expect(dueSlot(at('12:03'), '2026-10-05 12:00')).toBeUndefined();
     expect(dueSlot(at('12:03'), '2026-10-04 12:00')).toBe('12:00');
     expect(dueSlot(at('12:55'), null)).toBeUndefined();
     expect(dueSlot(at('17:00'), '2026-10-05 12:00')).toBe('17:00');
-    expect(dueSlot(at('21:20'), '2026-10-05 17:00')).toBe('21:00');
+    expect(dueSlot(at('19:40'), '2026-10-05 17:00')).toBe('20:00');
+    expect(dueSlot(at('21:20'), '2026-10-05 17:00')).toBeUndefined();
   });
 
   it('o agendamento atrasado do GitHub não repete um horário já coletado', () => {

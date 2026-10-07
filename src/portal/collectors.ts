@@ -14,9 +14,8 @@ import {
   parseCalendarResponse,
   parseClassCards,
   parseClassPostPage,
-  extractPortalDates,
-  inferItemType,
   parseMessageLinks,
+  parseMessageContent,
   parseWorkflowResponse,
   type BlogTimelineEntry,
   type PostAttachment,
@@ -34,7 +33,10 @@ async function responseJson(response: Response): Promise<unknown> {
   return (await response.json()) as unknown;
 }
 
-export async function collectMessages(page: Page): Promise<PortalItem[]> {
+export async function collectMessages(
+  page: Page,
+  onError?: (error: string) => void,
+): Promise<PortalItem[]> {
   await navigate(page, PORTAL_URLS.messages);
   const inputs: MessageLinkInput[] = await page
     .locator('a[href*="/Aluno/Mensagens/?mId="]')
@@ -67,61 +69,63 @@ export async function collectMessages(page: Page): Promise<PortalItem[]> {
   );
   const results: PortalItem[] = [];
   for (const summary of summaries) {
-    await navigate(page, summary.sourceUrl);
-    const panels = (await page.locator('.box-mensagens, .panel-body').allTextContents())
-      .map((text) => text.replace(/\s+/g, ' ').trim())
-      .filter(Boolean);
-    const body = panels.sort((left, right) => right.length - left.length)[0] ?? summary.description;
-    const links = await page
-      .locator('.box-mensagens a[href], .panel-body a[href]')
-      .evaluateAll((elements) =>
+    try {
+      await navigate(page, summary.sourceUrl);
+      const panels = (await page.locator('.box-mensagens').allTextContents())
+        .map((text) => text.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+      const body = panels.join('\n\n');
+      const links = await page.locator('.box-mensagens a[href]').evaluateAll((elements) =>
         elements.map((link) => ({
           text: link.textContent ?? '',
           href: (link as HTMLAnchorElement).href,
         })),
       );
-    const type = inferItemType(`${summary.title} ${body}`);
-    results.push({
-      ...summary,
-      description: body,
-      type,
-      ...extractPortalDates(`${summary.title} ${body}`, type, referenceYear),
-      links: [summary.sourceUrl, ...links.map((link) => link.href)],
-      metadata: { ...summary.metadata, relatedLinks: JSON.stringify(links) },
-    });
+      results.push(parseMessageContent(summary, body, links, referenceYear));
 
-    if (!/calend[aá]rio\s+de\s+provas/i.test(summary.title)) continue;
-    const documentLink = links.find((link) => /sharepoint\.com/i.test(link.href));
-    if (!documentLink) continue;
-    try {
-      const pdfResponse = page.waitForResponse(
-        async (response) =>
-          (await response.allHeaders())['content-type']
-            ?.toLowerCase()
-            .includes('application/pdf') ?? false,
-        { timeout: 60_000 },
-      );
-      await navigate(page, documentLink.href);
-      const response = await pdfResponse;
-      results.push(
-        ...(await parseExamSchedulePdf(
-          new Uint8Array(await response.body()),
-          enrolledClasses,
-          referenceYear,
-          summary.sourceUrl,
-          documentLink.href,
-        )),
-      );
+      if (!/calend[aá]rio\s+de\s+provas/i.test(summary.title)) continue;
+      const documentLink = links.find((link) => /sharepoint\.com/i.test(link.href));
+      if (!documentLink) continue;
+      try {
+        const pdfResponse = page.waitForResponse(
+          async (response) =>
+            (await response.allHeaders())['content-type']
+              ?.toLowerCase()
+              .includes('application/pdf') ?? false,
+          { timeout: 60_000 },
+        );
+        const [received, navigation] = await Promise.allSettled([
+          pdfResponse,
+          navigate(page, documentLink.href),
+        ]);
+        if (navigation.status === 'rejected') throw navigation.reason;
+        if (received.status === 'rejected') throw received.reason;
+        const response = received.value;
+        results.push(
+          ...(await parseExamSchedulePdf(
+            new Uint8Array(await response.body()),
+            enrolledClasses,
+            referenceYear,
+            summary.sourceUrl,
+            documentLink.href,
+          )),
+        );
+      } catch (error) {
+        // Mantém o comunicado coletado. A próxima execução tentará novamente o anexo.
+        onError?.(`Anexo de provas da mensagem ${summary.externalId} não verificado`);
+        logger.warn(
+          {
+            module: 'Portal',
+            source: 'Calendário oficial de provas',
+            error: error instanceof Error ? error.message : 'erro desconhecido',
+          },
+          'Não foi possível interpretar o anexo de provas',
+        );
+      }
     } catch (error) {
-      // Mantém o comunicado coletado. A próxima execução tentará novamente o anexo.
-      logger.warn(
-        {
-          module: 'Portal',
-          source: 'Calendário oficial de provas',
-          error: error instanceof Error ? error.message : 'erro desconhecido',
-        },
-        'Não foi possível interpretar o anexo de provas',
-      );
+      const detail = `Mensagem ${summary.externalId}: ${error instanceof Error ? error.message : 'falha ao abrir conteúdo'}`;
+      if (onError) onError(detail);
+      else logger.warn({ module: 'Portal' }, detail);
     }
   }
   return results;
@@ -455,16 +459,26 @@ export async function collectServiceHistory(page: Page): Promise<PortalItem[]> {
   const responsePromise = page.waitForResponse(
     (response) => response.url().includes('/Ajax/GetWorkflowHistory') && response.status() === 200,
   );
-  await navigate(page, PORTAL_URLS.service);
-  return parseWorkflowResponse(await responseJson(await responsePromise));
+  const [response, navigation] = await Promise.allSettled([
+    responsePromise,
+    navigate(page, PORTAL_URLS.service),
+  ]);
+  if (navigation.status === 'rejected') throw navigation.reason;
+  if (response.status === 'rejected') throw response.reason;
+  return parseWorkflowResponse(await responseJson(response.value));
 }
 
 export async function collectCalendarEvents(page: Page): Promise<PortalItem[]> {
   const responsePromise = page.waitForResponse(
     (response) => response.url().includes('/Calendario/ObterEventos') && response.status() === 200,
   );
-  await navigate(page, PORTAL_URLS.calendar);
-  return parseCalendarResponse(await responseJson(await responsePromise));
+  const [response, navigation] = await Promise.allSettled([
+    responsePromise,
+    navigate(page, PORTAL_URLS.calendar),
+  ]);
+  if (navigation.status === 'rejected') throw navigation.reason;
+  if (response.status === 'rejected') throw response.reason;
+  return parseCalendarResponse(await responseJson(response.value));
 }
 
 export async function collectRegularSchedule(page: Page): Promise<PortalItem[]> {

@@ -44,6 +44,43 @@ describe('definições das ferramentas', () => {
 });
 
 describe('ferramentas do assistente', () => {
+  it('consulta agendamento EAD recente com horário e local em vez de depender do resumo antigo', () => {
+    const old = exam({
+      title: 'Comunicado 2 - Prova Regular IN 16set',
+      discipline: undefined,
+      officialDate: '2026-10-31',
+      metadata: { origin: 'MESSAGE', aiSummary: 'Horário e local serão divulgados depois.' },
+    });
+    const notice = exam({
+      externalId: 'message:KJQUNpJPeiU=',
+      sourceUrl: 'https://aluno.uvv.br/Aluno/Mensagens/?mId=KJQUNpJPeiU=',
+      title: 'Agendamento Provas EAD 20% 07out',
+      discipline: undefined,
+      description: 'Prova agendada em 31/10/2026:08:00 no Campus Boa Vista, SALA 18.',
+      officialDate: '2026-10-31T08:00:00',
+      metadata: {
+        origin: 'MESSAGE',
+        officialExamAppointment: 'true',
+        location: 'Campus Boa Vista, SALA 18',
+        aiRelevance: 'IRRELEVANT',
+        aiSuggestedType: 'NOTICE',
+      },
+    });
+    const { deps } = fakeDeps({ items: [old, notice], now: new Date('2026-10-07T15:00:00Z') });
+    const result = run(new ToolRunner(deps), 'get_upcoming_exams', {
+      end_date: null,
+      include_second_call: false,
+    }) as { exams: Array<{ time?: string }>; officialNotices: Array<Record<string, unknown>> };
+    expect(result.exams.some((exam) => exam.time === '08:00')).toBe(true);
+    expect(result.officialNotices[0]).toMatchObject({
+      id: notice.id,
+      officialDate: '2026-10-31T08:00:00',
+      location: 'Campus Boa Vista, SALA 18',
+      personalizedAppointment: true,
+      url: notice.sourceUrl,
+    });
+    expect(result.officialNotices[0]?.text).toContain('08:00');
+  });
   it('consulta a agenda do período juntando todas as fontes', () => {
     const prova = exam();
     const calendar = new FakeCalendar([

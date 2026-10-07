@@ -114,4 +114,22 @@ describe('envio das mensagens agendadas', () => {
       '📅 <b>Próximos 14 dias</b>',
     ]);
   });
+
+  it('com resumo externo não repete painel, mas continua enviando novidades', async () => {
+    const telegram = new FakeTelegram();
+    const repository = new InMemoryAcademicRepository();
+    const errors = await deliverNotifications({
+      telegram,
+      repository,
+      slot: '12:00',
+      context: createRenderContext({ now, items: [aop] }),
+      plan: { notifications: [{ item: aop, reason: 'new' }], log: [] },
+      weekly: false,
+      dailyDigestExternal: true,
+    });
+    expect(errors).toEqual([]);
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.pinned).toEqual([]);
+    expect(telegram.sent[0]?.text).toContain('AOP');
+  });
 });

@@ -23,6 +23,8 @@ export interface NotificationInput {
   context: RenderContext;
   plan: NotificationPlan;
   weekly: boolean;
+  /** Resumos periódicos enviados pelo Apps Script, independentemente desta coleta. */
+  dailyDigestExternal?: boolean;
 }
 
 const cardContexts: Record<Exclude<NotificationReason, 'notice'>, CardContext> = {
@@ -108,9 +110,10 @@ export async function deliverNotifications(input: NotificationInput): Promise<st
     await attempt('registro', () => input.repository.upsertNotificationLog(input.plan.log));
   }
 
+  if (input.dailyDigestExternal) return errors;
   if (input.slot === '12:00') await attempt('painel', () => sendPanel(input));
 
-  if (input.slot === '21:00') {
+  if (input.slot === '20:00' || input.slot === '21:00') {
     const relevant = upcoming(input.context.agenda, 1).filter(
       (entry) => entry.days === 1 || entry.kind === 'TASK',
     );

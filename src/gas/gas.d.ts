@@ -59,6 +59,7 @@ declare namespace GasUtilities {
 }
 
 declare const Utilities: {
+  getUuid(): string;
   newBlob(data: string | number[], contentType?: string): GasUtilities.Blob;
   gzip(blob: GasUtilities.Blob): GasUtilities.Blob;
   ungzip(blob: GasUtilities.Blob): GasUtilities.Blob;

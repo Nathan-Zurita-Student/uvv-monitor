@@ -1,13 +1,13 @@
 name: UVV Monitor
 
-# O Apps Script dispara esta coleta às 12h, 17h e 21h (workflow_dispatch, MONITOR_DISPATCH_TOKEN).
-# O agendamento abaixo é a reserva, depois da janela do Apps Script e fora da hora cheia (que o
-# GitHub atrasa mais); é ignorado quando aquele horário já foi coletado.
+# O Apps Script dispara a coleta 20 min antes dos avisos de 12h, 17h e 20h.
+# O agendamento abaixo também antecipa a coleta e evita a hora cheia (que o GitHub atrasa mais).
+# É ignorado quando aquele horário já foi coletado. Não determina o horário do resumo do Telegram.
 on:
   schedule:
-    - cron: '55 15 * * *'
-    - cron: '55 20 * * *'
-    - cron: '55 0 * * *'
+    - cron: '35 14 * * *'
+    - cron: '35 19 * * *'
+    - cron: '35 22 * * *'
   workflow_dispatch:
     inputs:
       slot:
@@ -15,7 +15,7 @@ on:
         required: true
         default: '12:00'
         type: choice
-        options: ['12:00', '17:00', '21:00']
+        options: ['12:00', '17:00', '20:00']
 
 permissions:
   contents: read
@@ -31,6 +31,8 @@ jobs:
     timeout-minutes: 20
     env:
       TZ: America/Sao_Paulo
+      # Ativar a variável somente após publicar/testar o resumo no Apps Script.
+      DAILY_DIGEST_EXTERNAL: ${{ vars.DAILY_DIGEST_EXTERNAL || 'false' }}
       UVV_USERNAME: ${{ secrets.UVV_USERNAME }}
       UVV_PASSWORD: ${{ secrets.UVV_PASSWORD }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -66,12 +68,12 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "RUN_SLOT=${{ inputs.slot }}" >> "$GITHUB_ENV"
-          elif [[ "${{ github.event.schedule }}" == "55 15 * * *" ]]; then
+          elif [[ "${{ github.event.schedule }}" == "35 14 * * *" ]]; then
             echo "RUN_SLOT=12:00" >> "$GITHUB_ENV"
-          elif [[ "${{ github.event.schedule }}" == "55 20 * * *" ]]; then
+          elif [[ "${{ github.event.schedule }}" == "35 19 * * *" ]]; then
             echo "RUN_SLOT=17:00" >> "$GITHUB_ENV"
           else
-            echo "RUN_SLOT=21:00" >> "$GITHUB_ENV"
+            echo "RUN_SLOT=20:00" >> "$GITHUB_ENV"
           fi
       - run: npm run check
       - run: npm start

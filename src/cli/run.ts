@@ -14,7 +14,7 @@ function resolveSlot(configured: DailySlot | undefined, now: Date): DailySlot {
   );
   if (localHour < 15) return '12:00';
   if (localHour < 19) return '17:00';
-  return '21:00';
+  return '20:00';
 }
 
 const config = loadConfig();

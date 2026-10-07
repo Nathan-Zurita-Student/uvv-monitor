@@ -20,7 +20,7 @@ ferramentas. Sem chave da OpenAI, botões, comandos, avisos e lembretes continua
 - Webhook opcional e gratuito em Google Apps Script para botões inline com resposta imediata.
 - Assistente com GPT e ferramentas (agenda, atividades, provas, Gmail, AVA, lembretes, memória,
   horários livres e prioridades), proativo e com confirmação antes de alterar ou apagar algo.
-- GitHub Actions configurado para 12h, 17h e 21h em `America/Sao_Paulo`.
+- Coletas no GitHub Actions, com resumos independentes às 12h, 17h e 20h em `America/Sao_Paulo`.
 - `DRY_RUN=true` é o padrão.
 
 O Ambiente Virtual é acessado pelo mesmo botão SSO usado pela interface do Portal. Uma URL privada
@@ -107,14 +107,14 @@ curtas, em linguagem natural, e todas as ações acontecem dentro do Telegram co
 
 ### Como ele avisa
 
-| Quando           | O que chega                                                                                                                            |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Uma novidade     | Um cartão curto: tipo, nome, disciplina, prazo, o que importa e ações                                                                  |
-| Várias novidades | Um resumo ("2 atividades novas, nenhuma prova nova...") com **📋 Ver novidades**, que navega pelos itens na mesma mensagem (⬅️ 1/3 ➡️) |
-| Prazo chegando   | Um alerta por nível: até 3 dias, no dia e quando atrasa                                                                                |
-| 12h              | Painel em menu, fixado no chat                                                                                                         |
-| 21h              | "Amanhã", só se houver prova ou entrega                                                                                                |
-| Domingo, 21h     | Os próximos 14 dias                                                                                                                    |
+| Quando              | O que chega                                                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Uma novidade        | Um cartão curto: tipo, nome, disciplina, prazo, o que importa e ações                                                                  |
+| Várias novidades    | Um resumo ("2 atividades novas, nenhuma prova nova...") com **📋 Ver novidades**, que navega pelos itens na mesma mensagem (⬅️ 1/3 ➡️) |
+| Prazo chegando      | Um alerta por nível: até 3 dias, no dia e quando atrasa                                                                                |
+| 12h                 | Painel em menu, fixado no chat                                                                                                         |
+| 20h                 | Próximos três dias, com provas e entregas pendentes                                                                                    |
+| Quarta/domingo, 20h | Revisão dos próximos sete dias                                                                                                         |
 
 Um item só é avisado de novo quando algo relevante muda: prazo, conteúdo publicado pelo professor,
 urgência ou um lembrete pedido. A assinatura de cada aviso fica na aba `notification_log`.
@@ -346,7 +346,7 @@ Além da explicação, a IA:
 - encontra datas de prova ou entrega escritas no texto. A data só é aceita quando o trecho citado
   existe literalmente na fonte e contém o dia; ela aparece como "data lida do texto" e não gera
   evento no Google Calendar;
-- sugere às 21h no que focar no dia seguinte, escolhendo apenas entre as pendências reais.
+- oferece às 20h o resumo das pendências reais dos próximos dias.
 
 O orçamento de chamadas vai primeiro para as novidades da execução, depois para provas e tarefas
 pela data mais próxima e, por último, para avisos recentes. O resultado é guardado junto ao item na
@@ -369,7 +369,7 @@ npm start
 Para simular uma janela específica no PowerShell:
 
 ```powershell
-$env:RUN_SLOT='21:00'
+$env:RUN_SLOT='20:00'
 npm start
 ```
 
@@ -377,14 +377,20 @@ A primeira execução inicializa a memória sem enviar dezenas de alertas retroa
 
 ## GitHub Actions
 
-O agendamento do GitHub costuma atrasar horas nos horários cheios. Por isso, quem dispara a coleta
-às 12h, 17h e 21h é o Apps Script (`processReminders`, a cada 5 minutos), chamando
-`workflow_dispatch` no horário certo. O `schedule` do workflow fica como reserva, fora da hora
-cheia, e é ignorado quando aquele horário já foi coletado (sem repetir o painel nem o "amanhã"):
+O GitHub pode atrasar as coletas. Os resumos são enviados independentemente por Apps Script,
+acionado pelo cron-job.org às 12h, 17h e 20h, com recuperação nos quatro minutos seguintes e
+um acionador Google de reserva. Veja [configuração e limitações](docs/independent-notifications.md).
+O Apps Script pede a coleta ao GitHub vinte minutos antes de cada resumo. O workflow também tem
+agendamento de reserva antecipado, ignorado quando aquela janela já foi coletada:
 
-- `55 15 * * *` → 12h55 em São Paulo (janela 12h)
-- `55 20 * * *` → 17h55 em São Paulo (janela 17h)
-- `55 0 * * *` → 21h55 em São Paulo (janela 21h)
+- `35 14 * * *` → 11h35 em São Paulo (janela 12h)
+- `35 19 * * *` → 16h35 em São Paulo (janela 17h)
+- `35 22 * * *` → 19h35 em São Paulo (janela 20h)
+
+Ative a variável de repositório `DAILY_DIGEST_EXTERNAL=true` somente depois de publicar e testar
+o novo Apps Script. Sem ela, o coletor mantém seus resumos antigos como compatibilidade.
+Um resumo pode usar a última coleta disponível, avisando explicitamente quando estiver antiga
+ou incompleta. Agendamento gratuito não oferece garantia de entrega no segundo exato.
 
 Para o disparo pelo Apps Script, crie um token _fine-grained_ no GitHub (**Settings → Developer
 settings → Fine-grained tokens**) com acesso só ao repositório `uvv-monitor` e permissão

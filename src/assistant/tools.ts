@@ -555,7 +555,7 @@ export class ToolRunner {
       .filter((word) => word.length >= 2);
     return items.filter((item) => {
       const haystack = normalize(
-        `${item.title} ${item.discipline ?? ''} ${itemLabel(item)} ${item.metadata?.aiDisplayTitle ?? ''}`,
+        `${item.title} ${item.discipline ?? ''} ${itemLabel(item)} ${item.metadata?.aiDisplayTitle ?? ''} ${item.description}`,
       );
       return words.every((word) => haystack.includes(word));
     });
@@ -619,6 +619,36 @@ export class ToolRunner {
       ...(args.include_second_call === true ? this.agenda.conditionalExams : []),
     ].filter((entry) => entry.due && localDateKey(entry.due) <= until);
     return {
+      // Comunicados são evidência primária. Um resumo antigo pode dizer "horário a divulgar"
+      // mesmo depois de o agendamento personalizado chegar às Mensagens do Portal.
+      officialNotices: this.deps.items
+        .filter(
+          (item) =>
+            item.metadata?.origin === 'MESSAGE' &&
+            (item.type === 'EXAM' || /provas?|avalia[cç][aã]o|exame/i.test(item.title)) &&
+            item.metadata?.contextOnly !== 'true' &&
+            !['DONE', 'IGNORED'].includes(item.status) &&
+            (!item.officialDate ||
+              (item.officialDate.slice(0, 10) >= this.today() &&
+                item.officialDate.slice(0, 10) <= until)),
+        )
+        .sort(
+          (left, right) =>
+            publishedAt(right, this.deps.now).getTime() -
+            publishedAt(left, this.deps.now).getTime(),
+        )
+        .slice(0, 12)
+        .map((item) => ({
+          id: item.id,
+          title: item.title,
+          url: item.sourceUrl,
+          published: localDateKey(publishedAt(item, this.deps.now)),
+          ...(item.officialDate ? { officialDate: item.officialDate } : {}),
+          ...(item.metadata?.location ? { location: item.metadata.location } : {}),
+          personalizedAppointment: item.metadata?.officialExamAppointment === 'true',
+          text: item.description.slice(0, 1200),
+          truncated: item.description.length > 1200,
+        })),
       exams: entries.map((entry) => ({
         ...summarizeEntry(entry, this.deps.now),
         ...(entry.conditional ? { onlyIfNeeded: true } : {}),
@@ -814,6 +844,7 @@ export class ToolRunner {
       ...(item.metadata?.aiDueDate ? { dateReadByAi: item.metadata.aiDueDate } : {}),
       url: item.sourceUrl,
       text: item.description.slice(0, 5000),
+      ...(item.metadata?.location ? { location: item.metadata.location } : {}),
       ...(item.metadata?.aiSummary
         ? {
             analysis: {

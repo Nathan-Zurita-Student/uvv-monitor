@@ -19,7 +19,7 @@ export function originOf(item: AcademicItem): string {
 }
 
 export function hasTrustedOrigin(item: AcademicItem): boolean {
-  return trustedOrigins.has(originOf(item));
+  return trustedOrigins.has(originOf(item)) || item.metadata?.officialExamAppointment === 'true';
 }
 
 /** A IA classificou como propaganda, vaga, pesquisa opcional etc. */

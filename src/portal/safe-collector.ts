@@ -86,7 +86,10 @@ export async function collectPortalSafely(
   const posts: PortalItem[] = [];
   const errors: string[] = [];
   const collectors: Array<readonly [string, (page: Page) => Promise<PortalItem[]>]> = [
-    ['Mensagens', collectMessages],
+    [
+      'Mensagens',
+      (current) => collectMessages(current, (error) => errors.push(`Mensagens: ${error}`)),
+    ],
     ['Turmas', async (current) => (await collectClassPosts(current, now)).map(keep(posts))],
     ['AVA/EAD', collectEadActivities],
     ['Atendimento', collectServiceHistory],

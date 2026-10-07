@@ -21,7 +21,11 @@ const environmentSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   PORTAL_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
   DIAGNOSTICS_DIR: z.string().trim().min(1).default('artifacts/diagnostics'),
-  RUN_SLOT: z.enum(['12:00', '17:00', '21:00']).optional(),
+  RUN_SLOT: z.enum(['12:00', '17:00', '20:00', '21:00']).optional(),
+  DAILY_DIGEST_EXTERNAL: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   UVV_USERNAME: optionalSecret,
   UVV_PASSWORD: optionalSecret,
   TELEGRAM_BOT_TOKEN: optionalSecret,

@@ -61,6 +61,12 @@ function isoDate(year: number, month: number, day: number): string | undefined {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+/** Horários sempre ligados à data no texto oficial, inclusive DD/MM/AAAA:HH:mm da UVV. */
+function dateWithTime(date: string, hours?: string, minutes?: string): string {
+  if (!hours || !minutes || Number(hours) > 23 || Number(minutes) > 59) return date;
+  return `${date}T${hours.padStart(2, '0')}:${minutes}:00`;
+}
+
 export function extractPortalDates(
   text: string,
   type: ItemType,
@@ -117,20 +123,51 @@ export function extractPortalDates(
         monthNumbers[writtenDate[2] ?? ''] ?? 0,
         Number(writtenDate[1]),
       );
-      if (date) return { officialDate: date };
+      if (date) {
+        const after = normalized.slice((writtenDate.index ?? 0) + writtenDate[0].length);
+        const time = /^\s*(?:,\s*)?(?:as|a partir das)\s+(\d{1,2})[:h](\d{2})/.exec(after);
+        return { officialDate: dateWithTime(date, time?.[1], time?.[2]) };
+      }
     }
     const numericDate =
-      /(?:prova|avaliacao|exame)[^.!?]{0,120}?(?:dia\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i.exec(
+      /(?:provas?|avaliacao|exame)[^.!?]{0,180}?(?:dia\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:\s*(?::|,?\s+(?:as\s+|a partir das\s+)?)(\d{1,2})[:h](\d{2}))?/i.exec(
         normalized,
       );
     if (numericDate) {
       const rawYear = Number(numericDate[3] ?? referenceYear);
       const year = rawYear < 100 ? 2000 + rawYear : rawYear;
       const date = isoDate(year, Number(numericDate[2]), Number(numericDate[1]));
-      if (date) return { officialDate: date };
+      if (date) return { officialDate: dateWithTime(date, numericDate[4], numericDate[5]) };
     }
   }
   return {};
+}
+
+export function parseMessageContent(
+  summary: PortalItem,
+  body: string,
+  links: Array<{ text: string; href: string }>,
+  referenceYear: number,
+): PortalItem {
+  if (!body.trim()) throw new Error('Conteúdo da mensagem do Portal não encontrado.');
+  const type = inferItemType(`${summary.title} ${body}`);
+  const location = /(?:no seguinte local|local da prova|local)\s*:?\s*(.+)/i
+    .exec(body)?.[1]
+    ?.trim();
+  const scheduled = /prova\s+agendada/i.test(body);
+  return {
+    ...summary,
+    description: body.trim(),
+    type,
+    ...extractPortalDates(body, type, referenceYear),
+    links: [summary.sourceUrl, ...links.map((link) => link.href)],
+    metadata: {
+      ...summary.metadata,
+      relatedLinks: JSON.stringify(links),
+      ...(location ? { location } : {}),
+      ...(scheduled ? { officialExamAppointment: 'true' } : {}),
+    },
+  };
 }
 
 export function inferItemType(text: string): ItemType {
