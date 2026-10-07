@@ -16,12 +16,8 @@ function processReminders() {
   return UVVBot.processReminders();
 }
 
-/** Ativa resumos independentes às 12h, 17h e 20h; mantém o acionador de cinco minutos como reserva. */
+/** Ativa resumos independentes; usa o acionador processReminders já configurado como reserva. */
 function setupDailyDigests() {
-  const exists = ScriptApp.getProjectTriggers().some(
-    (trigger) => trigger.getHandlerFunction() === 'processReminders',
-  );
-  if (!exists) ScriptApp.newTrigger('processReminders').timeBased().everyMinutes(5).create();
   const result = UVVBot.setupDailyDigests();
   console.log(result);
   return result;

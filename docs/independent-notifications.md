@@ -19,8 +19,10 @@ coletor quando ele concluir; a separação não resolve a disponibilidade do Por
 1. Publicar `apps-script/Code.gs` como Código.gs e `apps-script/Bot.gs` como Bot.gs no projeto existente.
 2. Atualizar a implantação existente para uma nova versão, sem mudar o acesso do webhook.
 3. Executar `sendDailyDigestTest` no editor e confirmar mensagem e botões no próprio Telegram.
-4. Executar `setupDailyDigests`. Cria um token restrito e mantém o acionador `processReminders`
-   a cada cinco minutos como reserva. Os resumos funcionam sem API de IA nem conta de faturamento.
+4. Conferir na aba Acionadores que `processReminders` já roda a cada cinco minutos; se não houver,
+   cadastrar esse acionador pela interface. Executar `setupDailyDigests` cria um token restrito e
+   ativa os resumos. Não solicita permissão para gerenciar acionadores programaticamente.
+   Os resumos funcionam sem API de IA nem conta de faturamento.
 5. No GitHub, variável de repositório `DAILY_DIGEST_EXTERNAL=true`: evita os painéis periódicos
    duplicados enviados pelo Node. Não desabilita novidades nem arquivos.
 
