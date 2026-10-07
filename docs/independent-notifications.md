@@ -66,12 +66,28 @@ podem falhar. Registrar/testar a entrega e explicitar desatualização é parte 
 
 ## Checklist e retorno à versão anterior
 
-- [ ] `npm run check` aprovado e regressões de timeout/mensagens cobertas.
-- [ ] Nova implantação publicada, teste de resumo recebido e botões funcionais.
-- [ ] `dailyDigestInfo` mostra enabled=true, tokenConfigured=true e horários corretos.
-- [ ] Agendador privado ativo; chamada repetida retorna idle e não duplica.
-- [ ] Variável do GitHub ativada; coleta nova termina e renova a memória do bot.
-- [ ] Não há serviço Google Cloud faturável ativado por esta mudança.
+- [x] `npm run check` aprovado e regressões de timeout/mensagens cobertas (253 testes).
+- [x] Nova implantação publicada (versão 17), resumo recebido e botão de consulta abre o painel.
+- [x] `dailyDigestInfo` mostra enabled=true, tokenConfigured=true e horários corretos.
+- [x] Agendador privado ativo; teste fora da janela retorna idle (HTTP 200, 2,4 segundos).
+- [x] Variável do GitHub ativada; coleta nova termina e renova a memória do bot.
+- [x] Não há serviço Google Cloud faturável ativado por esta mudança.
+- [ ] Observar a primeira entrega agendada real e a duração da chamada que efetivamente envia.
+
+### Validação em produção — 07/10/2026
+
+A coleta manual no GitHub (run `37669842443`) terminou às 15h57 no fuso de São Paulo:
+Portal/AVA, Gmail e Calendar `SUCCESS`, 294 itens encontrados e nenhum erro de fonte.
+O resumo de teste chegou às 16h05 com links, status e a coleta atualizada. O botão de consulta
+abriu o painel. Uma pergunta real ao assistente confirmou a prova EAD em 31/10 às 8h e o local
+da mensagem personalizada, em vez de repetir o comunicado geral sem horário.
+
+A implantação 17 mantém a URL e as permissões anteriores. A variável de repositório
+`DAILY_DIGEST_EXTERNAL=true` está ativa. O cron privado foi salvo com a próxima execução às
+17h e sem armazenamento de respostas. O primeiro teste retornou idle, corretamente fora
+da janela. Um segundo teste foi iniciado, mas o controle do navegador deixou de responder;
+seu resultado não foi confirmado. A primeira entrega realmente agendada ainda precisa ser
+observada; teste manual e testes automatizados não comprovam pontualidade futura.
 
 Se o novo resumo falhar, definir `DAILY_DIGEST_ENABLED=false` no Apps Script, desativar o cron
 externo e definir `DAILY_DIGEST_EXTERNAL=false` no GitHub. O envio antigo volta na próxima coleta.
