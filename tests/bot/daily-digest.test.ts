@@ -100,4 +100,21 @@ describe('resumo periódico independente da coleta', () => {
       renderDailyDigest(createRenderContext({ now: thursday.now, items: [task] }), '20:00').text,
     ).not.toContain('Entrega de segunda');
   });
+
+  it('não deixa três pendências antigas esconderem uma prova próxima', () => {
+    const context = createRenderContext({
+      now: at('12:00'),
+      items: [
+        ...Array.from({ length: 3 }, (_, n) =>
+          item({ id: `UVV-OLD${n}`, title: `Antiga ${n}`, officialDeadline: '2026-09-20' }),
+        ),
+        exam({ title: 'Prova de amanhã', officialDate: '2026-10-08T08:00:00' }),
+      ],
+    });
+    const result = renderDailyDigest(context, '12:00');
+    expect(result.text).toContain('Prova de Linguagens Formais');
+    expect(result.text.indexOf('Prova de Linguagens Formais')).toBeLessThan(
+      result.text.indexOf('Antiga 0'),
+    );
+  });
 });

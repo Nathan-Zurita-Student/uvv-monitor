@@ -59,7 +59,10 @@ export function renderDailyDigest(
 ): Rendered {
   const weekly = isWeeklyReviewRun(context.now, slot);
   const horizon = weekly ? 7 : slot === '20:00' || slot === '21:00' ? 3 : 1;
-  const relevant = [...context.agenda.overdue, ...upcoming(context.agenda, horizon)];
+  // Atrasos recentes têm prioridade, mas uma pendência antiga não deve esconder a próxima prova.
+  const recentOverdue = context.agenda.overdue.filter((entry) => (entry.days ?? -99) >= -7);
+  const oldOverdue = context.agenda.overdue.filter((entry) => (entry.days ?? -99) < -7);
+  const relevant = [...recentOverdue, ...upcoming(context.agenda, horizon), ...oldOverdue];
   const unique = [...new Map(relevant.map((entry) => [entry.item.id, entry])).values()];
   const shown: AgendaEntry[] = [];
   let used = 0;
