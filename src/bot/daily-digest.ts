@@ -51,7 +51,7 @@ function entryLine(entry: AgendaEntry): string {
   );
 }
 
-/** Não usa IA nem depende de uma coleta bem-sucedida naquele horário. */
+/** Renderiza dados já validados pelo chamador como pertencentes à coleta deste horário. */
 export function renderDailyDigest(
   context: RenderContext,
   slot: DailySlot,

@@ -21,6 +21,8 @@ import { SheetStore } from './sheet-store.js';
  */
 export interface Snapshot {
   builtAt: string;
+  /** Início da mesma execução representada por lastSyncAt/lastRun. */
+  lastRunStartedAt?: string;
   lastSyncAt?: string;
   /** Situação das fontes na última coleta, sem conteúdo ou erros sensíveis. */
   lastRun?: { portal: string; gmail: string; calendar: string };
@@ -168,9 +170,11 @@ export function buildSnapshot(sheetId: string): Snapshot {
     .filter((row) => Number.isFinite(Date.parse(row[2] ?? '')))
     .sort((a, b) => Date.parse(a[2]!) - Date.parse(b[2]!));
   const latest = finished.at(-1);
+  const lastRunStartedAt = latest?.[1];
   const lastSyncAt = latest?.[2];
   const snapshot: Snapshot = {
     builtAt: new Date().toISOString(),
+    ...(lastRunStartedAt ? { lastRunStartedAt } : {}),
     ...(lastSyncAt ? { lastSyncAt } : {}),
     ...(latest
       ? {

@@ -100,11 +100,13 @@ dos arquivos não é lido. O botão **📂 Materiais**, o comando `/materiais` e
 reenviam os arquivos com `sendDocument`/`sendMediaGroup` usando o `file_id`: o Apps Script nunca
 baixa nada do Portal (o download exige login e é feito pelo monitor).
 
-O acionador `processReminders` (5 minutos) também dispara a coleta do monitor às 12h, 17h e 21h
-(`workflow_dispatch` com a propriedade `MONITOR_DISPATCH_TOKEN`; sem ela, nada é disparado e vale
-o agendamento do GitHub). **🔍 Verificar Portal agora** e `/atualizar` disparam na hora, no máximo
-uma vez a cada 10 minutos. Ele envia os lembretes pessoais e, uma vez por dia a partir
-de `ASSISTANT_PROACTIVE_HOUR`, o aviso proativo mais importante que ainda não foi dado.
+O acionador `processReminders` (5 minutos) também dispara a coleta do monitor antes dos resumos das
+12h, 17h e 20h (`workflow_dispatch` com a propriedade `MONITOR_DISPATCH_TOKEN`; sem ela, vale o
+agendamento de reserva do GitHub). O resumo só é enviado depois que `run_history` confirma uma
+coleta iniciada na janela atual; ao concluir, o monitor chama o webhook e libera o envio.
+**🔍 Verificar Portal agora** e `/atualizar` disparam na hora, no máximo uma vez a cada 10 minutos.
+O acionador também envia os lembretes pessoais e, uma vez por dia a partir de
+`ASSISTANT_PROACTIVE_HOUR`, o aviso proativo mais importante que ainda não foi dado.
 
 Propriedades opcionais no Apps Script:
 

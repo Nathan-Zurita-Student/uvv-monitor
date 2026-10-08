@@ -206,7 +206,13 @@ export function doPost(event: {
     if (body && typeof body === 'object' && 'uvv' in body && body.uvv === 'daily_digest') {
       const token = 'token' in body ? body.token : undefined;
       if (!digestAuthorized(token)) return HtmlService.createHtmlOutput('unauthorized');
-      const result = withLock(() => sendScheduledDigest(props));
+      const result = withLock(() => {
+        const now = new Date();
+        // Se o acionador de cinco minutos não rodou antes, a própria tentativa do resumo garante
+        // que a varredura seja iniciada. O envio abaixo ficará em espera até ela terminar.
+        scheduledDispatch(now);
+        return sendScheduledDigest(props, now);
+      });
       return HtmlService.createHtmlOutput(result);
     }
     if (event.parameter?.secret !== props.webhookSecret)
@@ -223,7 +229,13 @@ export function doPost(event: {
       );
     }
     if (update.uvv === 'refresh') {
-      withLock(() => buildSnapshot(props.sheetId));
+      withLock(() => {
+        const now = new Date();
+        const snapshot = buildSnapshot(props.sheetId);
+        // Este POST vem do monitor depois de gravar run_history. Se um resumo estava aguardando
+        // essa coleta, entrega imediatamente em vez de esperar o próximo ciclo de cinco minutos.
+        sendScheduledDigest(props, now, snapshot);
+      });
       return ok;
     }
     const incomingChat = update.message?.chat.id ?? update.callback_query?.message?.chat.id;
@@ -324,14 +336,29 @@ export function doPost(event: {
  */
 export function processReminders(): void {
   const props = properties();
-  // Primeira etapa, independente de lembretes, GPT e fila do GitHub.
+  const now = new Date();
+  // Primeiro garante a varredura; o resumo só é liberado quando essa execução aparece concluída
+  // em run_history. Assim, um runner lento atrasa a mensagem, mas nunca faz dados antigos parecerem
+  // o resultado deste horário.
   try {
-    withLock(() => sendScheduledDigest(props));
+    withLock(() => {
+      const dispatch = scheduledDispatch(now);
+      if (dispatch?.result === 'ok')
+        console.log(`Coleta das ${dispatch.slot} disparada no GitHub Actions.`);
+      if (dispatch?.result === 'rejected') {
+        const notice = tokenProblemNotice(now);
+        if (notice) sendHtml(props, notice);
+      }
+    });
+  } catch (error) {
+    console.error(`Disparo da coleta falhou: ${String(error)}`);
+  }
+  try {
+    withLock(() => sendScheduledDigest(props, now));
   } catch (error) {
     console.error(`Resumo diário não enviado: ${error instanceof Error ? error.message : 'erro'}`);
   }
   withLock(() => {
-    const now = new Date();
     const state = readState();
     const fresh = state && now.getTime() - Date.parse(state.builtAt) <= MAX_SNAPSHOT_AGE_MS;
     // Sem cópia recente, relê a planilha: isso também deixa o cache pronto para os botões.
@@ -366,19 +393,6 @@ export function processReminders(): void {
   } catch (error) {
     // O aviso do dia é um extra: uma falha aqui não afeta os lembretes acima.
     console.error(`Aviso proativo falhou: ${String(error)}`);
-  }
-  try {
-    // Coleta no horário certo, sem depender do agendamento do GitHub (que atrasa horas).
-    const now = new Date();
-    const dispatch = scheduledDispatch(now);
-    if (dispatch?.result === 'ok')
-      console.log(`Coleta das ${dispatch.slot} disparada no GitHub Actions.`);
-    if (dispatch?.result === 'rejected') {
-      const notice = tokenProblemNotice(now);
-      if (notice) sendHtml(props, notice);
-    }
-  } catch (error) {
-    console.error(`Disparo da coleta falhou: ${String(error)}`);
   }
 }
 

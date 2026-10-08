@@ -1,18 +1,20 @@
-# Avisos independentes da coleta
+# Resumos condicionados à coleta do horário
 
 Horários: **12h, 17h e 20h**, sempre em `America/Sao_Paulo`.
 
 ## O que muda
 
-O resumo periódico não aguarda Playwright, análise por IA, instalação de dependências nem um
-runner do GitHub. O Apps Script lê os dados salvos no Sheets e os status atuais do Telegram.
+O Apps Script dispara a coleta antes do horário e só entrega o resumo depois que `run_history`
+confirma uma execução finalizada na janela atual. Se Playwright, a fila ou a instalação de
+dependências atrasarem, a mensagem espera; dados da coleta anterior nunca são enviados como o
+resumo atual. Ao terminar, o monitor chama o webhook, renova o snapshot e libera o envio.
+O Apps Script então lê os dados salvos no Sheets e os status atuais do Telegram.
 Até três prioridades são apresentadas com links e botões; tarefas concluídas/ignoradas ficam fora.
 Às 20h há um horizonte de três dias, e às quartas/domingos uma revisão de sete dias.
 
-Uma coleta antiga ou parcial **não** é apresentada como informação recém-verificada. O resumo
-informa a última coleta finalizada e a situação de Portal/AVA, Gmail e Calendar. Nenhuma novidade
-que ainda não foi coletada pode aparecer. Arquivos e novidades continuam sendo entregues pelo
-coletor quando ele concluir; a separação não resolve a disponibilidade do Portal ou do GitHub.
+Uma coleta antiga **não é enviada**. Uma coleta atual que terminou parcialmente pode gerar o
+resumo, mas ele informa a situação de Portal/AVA, Gmail e Calendar. Arquivos e novidades continuam
+sendo entregues pelo coletor quando ele concluir.
 
 ## Ativação e teste
 
@@ -52,8 +54,9 @@ entre Telegram e Apps Script. O ScriptLock serializa chamadas e a retenção é 
 
 O limite do cron-job.org é 30 segundos. Se o endpoint exceder esse limite ou falhar, a reserva do
 Apps Script tenta de novo durante a janela de uma hora. Validar a duração no teste real.
-O retorno `sent` confirma envio; `idle` indica já entregue ou fora da janela; `disabled` indica
-desativado; `unauthorized` indica token inválido. Um HTTP 200 isolado não prova que houve envio.
+O retorno `sent` confirma envio; `waiting` indica que a coleta atual ainda não terminou; `idle`
+indica já entregue ou fora da janela; `disabled` indica desativado; `unauthorized` indica token
+inválido. Um HTTP 200 isolado não prova que houve envio.
 
 ## Coletas e recuperação
 
@@ -62,12 +65,13 @@ O Apps Script tenta iniciar a coleta às 11h40, 16h40 e 19h40. O cron do GitHub 
 21:00 é aceito para compatibilidade, mas não consta em novos agendamentos.
 
 Nenhum componente garante entrega no segundo exato: Telegram, internet, Apps Script e agendador
-podem falhar. Registrar/testar a entrega e explicitar desatualização é parte do contrato.
+podem falhar. A prioridade é não entregar um resumo desatualizado; se a coleta atrasar, o resumo
+também atrasa e é tentado novamente pelo acionador de cinco minutos e pelo callback final.
 
 ## Checklist e retorno à versão anterior
 
-- [x] `npm run check` aprovado e regressões de timeout/mensagens cobertas (253 testes).
-- [x] Nova implantação publicada (versão 17), resumo recebido e botão de consulta abre o painel.
+- [x] `npm run check` aprovado e regressões de timeout/mensagens cobertas (255 testes).
+- [x] Nova implantação publicada (versão 18), mantendo a URL e as permissões existentes.
 - [x] `dailyDigestInfo` mostra enabled=true, tokenConfigured=true e horários corretos.
 - [x] Agendador privado ativo; teste fora da janela retorna idle (HTTP 200, 2,4 segundos).
 - [x] Variável do GitHub ativada; coleta nova termina e renova a memória do bot.
@@ -92,3 +96,12 @@ observada; teste manual e testes automatizados não comprovam pontualidade futur
 Se o novo resumo falhar, definir `DAILY_DIGEST_ENABLED=false` no Apps Script, desativar o cron
 externo e definir `DAILY_DIGEST_EXTERNAL=false` no GitHub. O envio antigo volta na próxima coleta.
 Não apagar memória acadêmica, implantação, segredos ou repositório para reverter.
+
+### Correção de produção — 08/10/2026
+
+O resumo das 12h foi entregue usando a coleta de 07/10 às 15h57, porque a versão 17 enviava o
+snapshot disponível mesmo quando a coleta da janela atual ainda não havia terminado. A versão 18
+passa a falhar fechada: retorna `waiting`, inicia a varredura se necessário e só envia depois de
+confirmar em `run_history` uma execução iniciada na janela atual e já finalizada. O callback de
+conclusão da coleta libera o resumo imediatamente. O cenário foi coberto por teste de integração e
+a implantação existente foi atualizada sem alterar sua URL.

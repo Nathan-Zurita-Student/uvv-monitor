@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { dueSlot } from '../../src/gas/collector-dispatch.js';
+import { collectionCoversDigest } from '../../src/gas/daily-digest.js';
 import { slotAlreadyCollected } from '../../src/scheduler/orchestrator.js';
 
 describe('coleta disparada pelo Apps Script', () => {
+  it('só libera o resumo depois de uma coleta da janela atual', () => {
+    const now = new Date('2026-10-05T12:00:00-03:00');
+    expect(collectionCoversDigest(undefined, undefined, now, '12:00')).toBe(false);
+    expect(
+      collectionCoversDigest('2026-10-04T23:40:00Z', '2026-10-04T23:50:00Z', now, '12:00'),
+    ).toBe(false);
+    expect(
+      collectionCoversDigest('2026-10-05T14:29:59Z', '2026-10-05T14:50:00Z', now, '12:00'),
+    ).toBe(false);
+    expect(
+      collectionCoversDigest('2026-10-05T14:30:00Z', '2026-10-05T14:50:00Z', now, '12:00'),
+    ).toBe(true);
+    expect(
+      collectionCoversDigest('2026-10-05T14:50:00Z', '2026-10-05T15:01:01Z', now, '12:00'),
+    ).toBe(false);
+  });
+
   it('dispara cada horário uma vez, logo depois da hora', () => {
     const at = (time: string) => new Date(`2026-10-05T${time}:00-03:00`);
     expect(dueSlot(at('11:39'), null)).toBeUndefined();

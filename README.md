@@ -20,7 +20,8 @@ ferramentas. Sem chave da OpenAI, botões, comandos, avisos e lembretes continua
 - Webhook opcional e gratuito em Google Apps Script para botões inline com resposta imediata.
 - Assistente com GPT e ferramentas (agenda, atividades, provas, Gmail, AVA, lembretes, memória,
   horários livres e prioridades), proativo e com confirmação antes de alterar ou apagar algo.
-- Coletas no GitHub Actions, com resumos independentes às 12h, 17h e 20h em `America/Sao_Paulo`.
+- Coletas no GitHub Actions, com resumos às 12h, 17h e 20h liberados somente após a varredura da
+  respectiva janela em `America/Sao_Paulo`.
 - `DRY_RUN=true` é o padrão.
 
 O Ambiente Virtual é acessado pelo mesmo botão SSO usado pela interface do Portal. Uma URL privada
@@ -377,9 +378,10 @@ A primeira execução inicializa a memória sem enviar dezenas de alertas retroa
 
 ## GitHub Actions
 
-O GitHub pode atrasar as coletas. Os resumos são enviados independentemente por Apps Script,
-acionado pelo cron-job.org às 12h, 17h e 20h, com recuperação nos quatro minutos seguintes e
-um acionador Google de reserva. Veja [configuração e limitações](docs/independent-notifications.md).
+O GitHub pode atrasar as coletas. O Apps Script é acionado pelo cron-job.org às 12h, 17h e 20h,
+com recuperação nos quatro minutos seguintes e um acionador Google de reserva, mas só envia o
+resumo quando a coleta daquela janela terminou. Veja
+[configuração e limitações](docs/independent-notifications.md).
 O Apps Script pede a coleta ao GitHub vinte minutos antes de cada resumo. O workflow também tem
 agendamento de reserva antecipado, ignorado quando aquela janela já foi coletada:
 
@@ -389,8 +391,9 @@ agendamento de reserva antecipado, ignorado quando aquela janela já foi coletad
 
 Ative a variável de repositório `DAILY_DIGEST_EXTERNAL=true` somente depois de publicar e testar
 o novo Apps Script. Sem ela, o coletor mantém seus resumos antigos como compatibilidade.
-Um resumo pode usar a última coleta disponível, avisando explicitamente quando estiver antiga
-ou incompleta. Agendamento gratuito não oferece garantia de entrega no segundo exato.
+Uma coleta parcial é identificada por fonte no resumo. Uma coleta antiga não libera o envio;
+portanto, atraso do runner pode atrasar a mensagem. Agendamento gratuito não oferece garantia de
+entrega no segundo exato.
 
 Para o disparo pelo Apps Script, crie um token _fine-grained_ no GitHub (**Settings → Developer
 settings → Fine-grained tokens**) com acesso só ao repositório `uvv-monitor` e permissão

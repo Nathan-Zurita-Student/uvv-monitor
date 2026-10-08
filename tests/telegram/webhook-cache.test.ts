@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { refreshWebhookCache } from '../../src/telegram/webhook-cache.js';
 
-describe('cópia do bot no Apps Script', () => {
-  it('pede uma cópia nova na URL do webhook', async () => {
+describe('conclusão da coleta no Apps Script', () => {
+  it('avisa a URL do webhook para atualizar a cópia e liberar o resumo', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
     const url = 'https://script.google.com/macros/s/abc/exec?secret=s3';
     await expect(refreshWebhookCache(url, fetcher)).resolves.toBe(true);

@@ -3,7 +3,7 @@ import { dueDigestSlot, renderDailyDigest } from '../../src/bot/daily-digest.js'
 import { createRenderContext } from '../../src/bot/screens.js';
 import { item, exam } from './fixtures.js';
 
-describe('resumo periódico independente da coleta', () => {
+describe('conteúdo do resumo periódico', () => {
   const at = (time: string) => new Date(`2026-10-07T${time}:00-03:00`);
   it('nunca envia antes, usa São Paulo e recupera atraso de até uma hora', () => {
     expect(dueDigestSlot(at('11:59'), () => false)).toBeUndefined();

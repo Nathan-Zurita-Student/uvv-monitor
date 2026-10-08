@@ -81,6 +81,7 @@ function fetchStub(url: string, params: { method?: string; payload?: string } = 
   const method = params.method ?? 'get';
   requests.push({ method, url, ...(params.payload ? { body: params.payload } : {}) });
   if (url.includes('openai.com')) return respond(openAiReplies.shift() ?? finalReply('ok'));
+  if (url.includes('api.github.com')) return respond('', 204);
   if (url.includes('oauth2.googleapis.com'))
     return respond({ access_token: 'token', expires_in: 3600 });
   if (url.includes('calendar/v3')) {
@@ -120,6 +121,18 @@ beforeEach(() => {
   sheets = new Map(Object.entries(tables).map(([name, headers]) => [name, [Array.from(headers)]]));
   appended = [];
   sheets.get('detected_items')!.push(academicItemToRow(item({ id: 'UVV-123' })));
+  sheets
+    .get('run_history')!
+    .push([
+      'run-fresh',
+      '2026-10-05T14:35:00Z',
+      '2026-10-05T14:50:00Z',
+      'SUCCESS',
+      'SUCCESS',
+      'SUCCESS',
+      '1',
+      '[]',
+    ]);
   telegramCalls = [];
   requests = [];
   openAiReplies = [];
@@ -203,8 +216,55 @@ describe('envio diário agendado', () => {
     processReminders();
     expect(messages()).toHaveLength(1);
     vi.setSystemTime(new Date('2026-10-05T20:00:00Z'));
+    sheets
+      .get('run_history')!
+      .push([
+        'run-17',
+        '2026-10-05T19:35:00Z',
+        '2026-10-05T19:50:00Z',
+        'SUCCESS',
+        'SUCCESS',
+        'SUCCESS',
+        '1',
+        '[]',
+      ]);
     expect(digestPost('x'.repeat(64))).toBe('sent');
     expect(messages()).toHaveLength(2);
+  });
+
+  it('inicia a varredura e espera a coleta deste horário antes de entregar', () => {
+    props.set('DAILY_DIGEST_TOKEN', 'x'.repeat(64));
+    props.set('DAILY_DIGEST_ENABLED', 'true');
+    props.set('MONITOR_DISPATCH_TOKEN', 'github-token');
+    sheets.set('run_history', [Array.from(tables.run_history)]);
+
+    expect(digestPost('x'.repeat(64))).toBe('waiting');
+    expect(messages()).toHaveLength(0);
+    expect(requests.filter((request) => request.url.includes('api.github.com'))).toHaveLength(1);
+    expect(props.get('MONITOR_LAST_DISPATCH')).toBe('2026-10-05 12:00');
+
+    vi.setSystemTime(new Date('2026-10-05T15:08:00Z'));
+    sheets
+      .get('run_history')!
+      .push([
+        'run-current',
+        '2026-10-05T14:55:00Z',
+        '2026-10-05T15:08:00Z',
+        'SUCCESS',
+        'SUCCESS',
+        'SUCCESS',
+        '1',
+        '[]',
+      ]);
+    expect(
+      doPost({
+        parameter: { secret: 'test-secret' },
+        postData: { contents: JSON.stringify({ uvv: 'refresh' }) },
+      }),
+    ).toBe('ok');
+    expect(messages()).toHaveLength(1);
+    expect(messages()[0]?.payload.text).toContain('Última coleta finalizada: seg, 05/10 · 12h08');
+    expect(messages()[0]?.payload.text).not.toContain('dados anteriores');
   });
 
   it('falha de Telegram não marca entregue e permite tentar novamente', () => {
@@ -224,9 +284,9 @@ describe('envio diário agendado', () => {
     props.set('DAILY_DIGEST_TOKEN', 'x'.repeat(64));
     props.set('DAILY_DIGEST_ENABLED', 'true');
     sheets.get('user_task_status')!.push(['UVV-123', 'DONE', new Date().toISOString(), 'TELEGRAM']);
-    sheets
-      .get('run_history')!
-      .push([
+    sheets.set('run_history', [
+      Array.from(tables.run_history),
+      [
         'run',
         '2026-10-05T14:40:00Z',
         '2026-10-05T14:50:00Z',
@@ -235,7 +295,8 @@ describe('envio diário agendado', () => {
         'SUCCESS',
         '1',
         '[]',
-      ]);
+      ],
+    ]);
     expect(digestPost('x'.repeat(64))).toBe('sent');
     expect(messages()[0]?.payload.text).toContain('Portal/AVA verificado parcialmente');
     expect(messages()[0]?.payload.text).not.toContain('Atividade Online Pontuada');
