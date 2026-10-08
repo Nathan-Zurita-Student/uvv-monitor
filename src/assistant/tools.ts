@@ -93,6 +93,11 @@ export interface AssistantDeps {
   documents?: DocumentsPort;
   calendar: CalendarPort;
   gmail: GmailPort;
+  /** Dispara uma coleta nova do Portal, AVA e Gmail, com limitação de frequência no adaptador. */
+  refreshSources(): {
+    status: 'started' | 'recent' | 'unavailable' | 'failed';
+    message: string;
+  };
   store: StorePort;
   /** Registra uma ação que só roda depois do "Confirmar" do usuário. */
   requestConfirmation(action: PendingAction): void;
@@ -207,6 +212,10 @@ export const toolDefinitions = [
       days_back: { type: 'integer', description: 'Quantos dias para trás (1 a 30)' },
       kind: { type: 'string', enum: ['tudo', 'atividades', 'notas', 'avisos'] },
     },
+  ),
+  tool(
+    'refresh_sources',
+    'Pede uma nova varredura do Portal do Aluno, AVA e Gmail agora. Use somente quando o usuário pedir explicitamente atualização/verificação imediata; a resposta chega no Telegram em cerca de 5 minutos.',
   ),
   tool(
     'send_class_files',
@@ -503,6 +512,8 @@ export class ToolRunner {
         return this.getFreeTime(args);
       case 'get_ava_updates':
         return this.getAvaUpdates(args);
+      case 'refresh_sources':
+        return this.deps.refreshSources();
       case 'search_gmail':
         return this.searchGmail(args);
       case 'read_email':

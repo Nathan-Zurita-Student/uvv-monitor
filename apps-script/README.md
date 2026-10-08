@@ -75,6 +75,10 @@ modelo decide o que consultar (Google Agenda, atividades, provas, Gmail, novidad
 livres, memória) e só recebe o necessário para cada pergunta. As análises automáticas do monitor
 continuam com o Gemini.
 
+Pedidos como “verifica o Portal agora” usam `refresh_sources`, respeitam o intervalo mínimo de dez
+minutos e disparam a mesma coleta completa do monitor. O `setupWebhook` também atualiza o menu `/`
+do Telegram com todos os atalhos disponíveis.
+
 Agenda e Gmail são acessados pela API REST com a autorização Google que o monitor já tem (Gmail
 somente leitura, Agenda e Planilhas), sincronizada pela ação **Configurar conversa do Telegram** ou
 por `node --env-file=.env scripts/configure-telegram-chat.mjs`. Nenhum escopo novo é pedido ao Apps

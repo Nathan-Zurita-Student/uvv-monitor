@@ -51,6 +51,7 @@ function setupWebhook() {
     drop_pending_updates: false,
     max_connections: 5,
   });
+  UVVBot.setupBotCommands();
   return webhookInfo();
 }
 

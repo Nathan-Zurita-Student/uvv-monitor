@@ -43,7 +43,7 @@ describe('comandos e respostas Telegram', () => {
     expect(parseTelegramAction(text)).toEqual({ kind: 'IGNORE' });
   });
 
-  it.each(['/start', '/ajuda'])('mostra ajuda para %s', (text) => {
+  it.each(['/start', '/ajuda', '/comandos'])('mostra ajuda para %s', (text) => {
     expect(parseTelegramAction(text)).toEqual({ kind: 'HELP' });
   });
 });

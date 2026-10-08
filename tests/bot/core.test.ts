@@ -217,6 +217,12 @@ describe('painel e novidades', () => {
     expect(stranger).toEqual([]);
   });
 
+  it('mostra a lista completa também em /comandos', () => {
+    const effects = message('/comandos');
+    expect(find(effects, 'send')?.text).toContain('/atualizar');
+    expect(find(effects, 'send')?.text).toContain('/comandos');
+  });
+
   it('recusa botões vindos de outro chat', () => {
     const context = createRenderContext({ now, items: [aop] });
     const effects = handleUpdate(

@@ -90,6 +90,7 @@ export interface Recorded {
   memory: MemoryFact[];
   forgotten: string[];
   pending: PendingAction[];
+  refreshes: number;
 }
 
 export function fakeDeps(
@@ -101,6 +102,7 @@ export function fakeDeps(
     memory: [],
     forgotten: [],
     pending: [],
+    refreshes: 0,
   };
   const calendar = (overrides.calendar as FakeCalendar | undefined) ?? new FakeCalendar();
   const gmail = new FakeGmail();
@@ -111,6 +113,10 @@ export function fakeDeps(
     reminders: [],
     calendar,
     gmail,
+    refreshSources: () => {
+      recorded.refreshes += 1;
+      return { status: 'started', message: 'Coleta iniciada.' };
+    },
     store: {
       setStatus: (record) => recorded.statuses.push(record),
       saveReminder: (reminder) => recorded.reminders.push(reminder),

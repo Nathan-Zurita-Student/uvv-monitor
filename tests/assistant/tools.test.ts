@@ -25,6 +25,7 @@ describe('definições das ferramentas', () => {
         'get_class_schedule',
         'search_gmail',
         'get_ava_updates',
+        'refresh_sources',
         'create_calendar_event',
         'update_calendar_event',
         'delete_calendar_event',
@@ -44,6 +45,13 @@ describe('definições das ferramentas', () => {
 });
 
 describe('ferramentas do assistente', () => {
+  it('dispara uma coleta nova somente quando a ferramenta é chamada', () => {
+    const { deps, recorded } = fakeDeps({ items: [], now });
+    const result = run(new ToolRunner(deps), 'refresh_sources', {});
+    expect(result).toEqual({ status: 'started', message: 'Coleta iniciada.' });
+    expect(recorded.refreshes).toBe(1);
+  });
+
   it('consulta agendamento EAD recente com horário e local em vez de depender do resumo antigo', () => {
     const old = exam({
       title: 'Comunicado 2 - Prova Regular IN 16set',

@@ -141,7 +141,8 @@ urgência ou um lembrete pedido. A assinatura de cada aviso fica na aba `notific
   o que não foi enviado tenta de novo na coleta seguinte).
 - **🔍 Verificar Portal agora** (`/atualizar`) pede uma coleta na hora (uma a cada 10 minutos).
 - Atalhos opcionais: `/hoje`, `/semana`, `/provas`, `/atividades`, `/prazos`, `/agenda`,
-  `/novidades`, `/materiais`, `/concluidas`, `/uvv`. Tudo isso também funciona escrevendo
+  `/novidades`, `/materiais`, `/concluidas`, `/uvv`, `/atualizar` e `/comandos`. O `setupWebhook`
+  também publica essa lista no menu nativo `/` do Telegram. Tudo isso funciona escrevendo
   normalmente.
 
 ### Assistente (conversa natural)
@@ -176,7 +177,7 @@ Telegram → webhook (Apps Script) → assistente (src/assistant/agent.ts) ⇄ G
 - **Ferramentas, não contexto gigante:** o GPT recebe só a data, a memória curta e alertas; ele
   decide o que consultar (`get_calendar_events`, `get_academic_tasks`, `get_upcoming_exams`,
   `get_class_schedule`, `get_discipline_overview`, `read_academic_item`, `send_class_files`,
-  `get_academic_context`, `get_free_time`, `get_ava_updates`,
+  `get_academic_context`, `get_free_time`, `get_ava_updates`, `refresh_sources`,
   `search_gmail`, `read_email`, `create_calendar_event`, `update_calendar_event`,
   `delete_calendar_event`, `create_reminder`, `cancel_reminder`, `mark_task_completed`,
   `save_memory`, `forget_memory`).

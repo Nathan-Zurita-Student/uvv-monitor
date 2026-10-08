@@ -27,7 +27,7 @@ export function parseTelegramAction(text: string, replyText?: string): TelegramA
   const itemId = itemIdFrom(text, replyText);
   const explicit = /^\/(feito|fazendo|pendente|ignorar|status)(?:@\w+)?\b/i.exec(text.trim());
 
-  if (/^\/(start|ajuda)(?:@\w+)?\b/i.test(text.trim())) return { kind: 'HELP' };
+  if (/^\/(start|ajuda|comandos)(?:@\w+)?\b/i.test(text.trim())) return { kind: 'HELP' };
 
   if (explicit) {
     if (!itemId) return { kind: 'UNKNOWN', reason: 'ID da tarefa ausente.' };

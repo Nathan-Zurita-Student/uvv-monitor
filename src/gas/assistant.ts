@@ -34,11 +34,12 @@ import {
 import type { Insight, PendingAction } from '../assistant/types.js';
 import { itemLabel } from '../bot/activity.js';
 import { encodeCallback } from '../bot/callbacks.js';
-import type { Keyboard } from '../bot/screens.js';
+import { helpText, type Keyboard } from '../bot/screens.js';
 import { userStatusToRow } from '../persistence/rows.js';
 import { escapeHtml } from '../telegram/html.js';
 import { localDateKey } from '../utils/dates.js';
 import { GasCalendar, GasGmail } from './google-api.js';
+import { manualDispatch, manualDispatchText } from './collector-dispatch.js';
 import { SheetStore } from './sheet-store.js';
 import {
   classesOf,
@@ -312,6 +313,10 @@ function buildDeps(env: AssistantEnv): AssistantDeps {
     documents: documentsPort(env),
     calendar: calendar(),
     gmail: new GasGmail(),
+    refreshSources: () => {
+      const status = manualDispatch(env.now);
+      return { status, message: manualDispatchText[status] };
+    },
     store: {
       setStatus: (record) =>
         persistNow(env, [{ table: 'user_task_status', row: userStatusToRow(record) }]),
@@ -419,6 +424,12 @@ export function assistantReply(
   const text = input.text.trim();
   const command = text.toLowerCase();
   if (/^\/gastos(?:@\w+)?$/.test(command)) return { html: escapeHtml(budgetSummary(env.now)) };
+  if (
+    /\b(comandos?|atalhos?)\b/i.test(text) &&
+    (text.includes('/') || /\b(bot|telegram)\b/i.test(text))
+  ) {
+    return { html: helpText() };
+  }
   if (/^\/(?:esquecer|cancelar)(?:@\w+)?$/.test(command)) {
     forgetConversation();
     return {

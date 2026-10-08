@@ -372,7 +372,7 @@ function handleMessage(message: TelegramMessage, input: BotInput, now: Date): Bo
     return effects;
   }
 
-  if (command === 'start' || command === 'ajuda' || command === 'help') {
+  if (command === 'start' || command === 'ajuda' || command === 'help' || command === 'comandos') {
     const home = renderView(input.context, 'home');
     return [
       { type: 'send', text: helpText() },

@@ -43,6 +43,7 @@ import {
   sendScheduledDigest,
 } from './daily-digest.js';
 import { renderDailyDigest } from '../bot/daily-digest.js';
+import { telegramCommands } from '../bot/screens.js';
 import { scheduledSlots } from '../scheduler/windows.js';
 import { GasCalendar } from './google-api.js';
 import {
@@ -505,7 +506,14 @@ export function setupWebhook(): string {
     drop_pending_updates: false,
     max_connections: 5,
   });
+  setupBotCommands();
   return webhookInfo();
+}
+
+/** Atualiza o menu nativo "/" do Telegram. */
+export function setupBotCommands(): string {
+  telegram(properties().botToken, 'setMyCommands', { commands: telegramCommands });
+  return `${String(telegramCommands.length)} comandos configurados.`;
 }
 
 export function deleteWebhook(): string {

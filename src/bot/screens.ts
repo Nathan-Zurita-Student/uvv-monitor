@@ -504,13 +504,33 @@ export function helpText(): string {
   return [
     '🎓 <b>Seu assistente da UVV</b>',
     '',
-    'Pode conversar comigo normalmente, como com uma pessoa: “como tá minha semana?”, “tenho prova sexta?”, “o que eu faço hoje?”, “organiza meus estudos”, “me lembra da AOP amanhã às 19h”, “me manda o PDF da unidade 3”.',
+    'Pode conversar comigo normalmente, como com uma pessoa: “como tá minha semana?”, “tenho prova sexta?”, “marca dentista amanhã às 14h na minha agenda”, “verifica o Portal agora”, “me lembra da AOP amanhã às 19h”, “me manda o PDF da unidade 3”.',
     '',
     'Eu acompanho o Portal (quadro de horários, murais das matérias e arquivos dos professores), o AVA, seus e-mails e sua Google Agenda, e te aviso do que importa. Os arquivos que os professores postam chegam aqui no chat.',
     '',
-    '• Atalhos: /hoje /semana /provas /atividades /prazos /agenda /novidades /materiais /painel',
+    '• Atalhos: /hoje /semana /provas /atividades /prazos /agenda /novidades /materiais /concluidas /uvv /painel',
     '• /atualizar pede uma nova verificação do Portal, AVA e e-mails (há nove resumos entre 10h e 23h)',
+    '• /comandos ou /ajuda mostra esta lista',
     '• Nos avisos, use os botões pra concluir, lembrar depois ou ignorar',
     '• /gastos mostra o consumo do GPT; /esquecer limpa o contexto da conversa',
   ].join('\n');
 }
+
+/** Comandos exibidos no menu nativo "/" do Telegram. */
+export const telegramCommands = [
+  { command: 'painel', description: 'Abrir o painel principal' },
+  { command: 'hoje', description: 'Ver compromissos de hoje' },
+  { command: 'semana', description: 'Ver a semana' },
+  { command: 'agenda', description: 'Ver a Google Agenda' },
+  { command: 'provas', description: 'Ver as próximas provas' },
+  { command: 'atividades', description: 'Ver atividades pendentes' },
+  { command: 'prazos', description: 'Ver os próximos prazos' },
+  { command: 'novidades', description: 'Ver novidades do Portal, AVA e Gmail' },
+  { command: 'materiais', description: 'Ver arquivos dos professores' },
+  { command: 'concluidas', description: 'Ver atividades concluídas' },
+  { command: 'uvv', description: 'Ver dados acadêmicos' },
+  { command: 'atualizar', description: 'Verificar todas as fontes agora' },
+  { command: 'gastos', description: 'Ver o consumo do assistente' },
+  { command: 'esquecer', description: 'Limpar o contexto da conversa' },
+  { command: 'comandos', description: 'Mostrar ajuda e comandos' },
+] as const;
