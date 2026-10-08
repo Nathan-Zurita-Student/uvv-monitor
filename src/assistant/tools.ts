@@ -215,7 +215,7 @@ export const toolDefinitions = [
   ),
   tool(
     'refresh_sources',
-    'Pede uma nova varredura do Portal do Aluno, AVA e Gmail agora. Use somente quando o usuário pedir explicitamente atualização/verificação imediata; a resposta chega no Telegram em cerca de 5 minutos.',
+    'Pede uma nova varredura do Portal do Aluno, AVA, Gmail e Agenda agora. Use somente quando o usuário pedir explicitamente atualização/verificação imediata. O bot envia um recibo final com horário e estado de cada fonte, mesmo quando não há novidade; normalmente leva de 4 a 8 minutos.',
   ),
   tool(
     'send_class_files',

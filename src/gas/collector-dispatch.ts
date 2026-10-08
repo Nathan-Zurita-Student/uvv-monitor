@@ -17,8 +17,11 @@ const DEFAULT_REPOSITORY = 'Nathan-Zurita-Student/uvv-monitor';
 const LAST_SLOT_PROPERTY = 'MONITOR_LAST_DISPATCH';
 const TOKEN_NOTICE_PROPERTY = 'MONITOR_TOKEN_NOTICE';
 const MANUAL_KEY = 'monitor.manual-dispatch';
+const MANUAL_PENDING_PROPERTY = 'MONITOR_MANUAL_PENDING';
 /** Atualização pedida no bot: no máximo uma a cada 10 minutos. */
 const MANUAL_COOLDOWN_SECONDS = 600;
+/** Depois disso, o pedido precisa terminar com um aviso explícito de demora. */
+export const MANUAL_TIMEOUT_MS = 25 * 60_000;
 
 export const collectionSlots = scheduledSlots;
 export type CollectionSlot = (typeof collectionSlots)[number];
@@ -114,6 +117,52 @@ export function tokenProblemNotice(now: Date): string | undefined {
 
 export type ManualDispatch = 'started' | 'recent' | 'unavailable' | 'failed';
 
+export interface PendingManualDispatch {
+  requestedAt: string;
+  slot: CollectionSlot;
+}
+
+/** Pedido durável: sobrevive à expiração do cache e só some depois do recibo no Telegram. */
+export function pendingManualDispatch(): PendingManualDispatch | undefined {
+  const raw = PropertiesService.getScriptProperties().getProperty(MANUAL_PENDING_PROPERTY);
+  if (!raw) return undefined;
+  try {
+    const value = JSON.parse(raw) as Partial<PendingManualDispatch>;
+    if (
+      typeof value.requestedAt !== 'string' ||
+      !Number.isFinite(Date.parse(value.requestedAt)) ||
+      !collectionSlots.includes(value.slot as CollectionSlot)
+    )
+      return undefined;
+    return value as PendingManualDispatch;
+  } catch {
+    return undefined;
+  }
+}
+
+export function clearPendingManualDispatch(): void {
+  PropertiesService.getScriptProperties().deleteProperty(MANUAL_PENDING_PROPERTY);
+}
+
+/** A coleta precisa ter terminado depois do pedido e ter começado na mesma janela. */
+export function manualDispatchCompleted(
+  request: PendingManualDispatch,
+  lastRunStartedAt: string | undefined,
+  lastSyncAt: string | undefined,
+): boolean {
+  const requested = Date.parse(request.requestedAt);
+  const started = Date.parse(lastRunStartedAt ?? '');
+  const finished = Date.parse(lastSyncAt ?? '');
+  return (
+    Number.isFinite(requested) &&
+    Number.isFinite(started) &&
+    Number.isFinite(finished) &&
+    started >= requested - 2 * 60_000 &&
+    finished >= requested &&
+    finished >= started
+  );
+}
+
 /** "Verificar Portal agora" no bot. */
 export function slotForManualDispatch(now: Date): CollectionSlot {
   const current = minutes(localTime(now));
@@ -124,15 +173,21 @@ export function manualDispatch(now = new Date()): ManualDispatch {
   if (!dispatchConfigured()) return 'unavailable';
   const cache = CacheService.getScriptCache();
   if (cache.get(MANUAL_KEY)) return 'recent';
-  if (dispatchCollection(slotForManualDispatch(now)) !== 'ok') return 'failed';
+  const slot = slotForManualDispatch(now);
+  if (dispatchCollection(slot) !== 'ok') return 'failed';
+  PropertiesService.getScriptProperties().setProperty(
+    MANUAL_PENDING_PROPERTY,
+    JSON.stringify({ requestedAt: now.toISOString(), slot } satisfies PendingManualDispatch),
+  );
   cache.put(MANUAL_KEY, '1', MANUAL_COOLDOWN_SECONDS);
   return 'started';
 }
 
 export const manualDispatchText: Record<ManualDispatch, string> = {
   started:
-    '🔄 Fui verificar o Portal, o AVA e seus e-mails agora. Em uns 5 minutos chega aqui o que tiver de novo (arquivos dos professores inclusive).',
-  recent: '🔄 Já estou verificando o Portal; daqui a pouco chega o que tiver de novo.',
+    '🔄 Comecei uma varredura real do Portal/AVA, Gmail e Agenda. Normalmente leva de 4 a 8 minutos; quando terminar, eu confirmo aqui o horário e o resultado de cada fonte, mesmo que não exista novidade.',
+  recent:
+    '🔄 A varredura que você pediu ainda está em andamento. Assim que terminar, eu mando o recibo aqui, mesmo que não exista novidade.',
   unavailable:
     'A verificação sob demanda ainda não foi ativada (falta o token do GitHub no Apps Script). As coletas automáticas continuam nos horários programados.',
   failed:

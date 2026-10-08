@@ -233,7 +233,7 @@ O mesmo núcleo roda em dois lugares:
 
 - **Apps Script (webhook)**: responde aos botões e comandos na hora e envia os lembretes por um
   acionador a cada 5 minutos. Veja [`apps-script/README.md`](apps-script/README.md).
-- **GitHub Actions**: coleta 3 vezes ao dia e envia novidades, alertas e o painel.
+- **GitHub Actions**: executa as nove coletas diárias e envia novidades, alertas e o painel.
 
 O monitor consulta `getWebhookInfo` a cada execução: com o webhook ativo, ele não lê o Telegram por
 `getUpdates`. Sem webhook, os cliques são processados só nas execuções agendadas (modo de

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { dueSlot, slotForManualDispatch } from '../../src/gas/collector-dispatch.js';
+import {
+  dueSlot,
+  manualDispatchCompleted,
+  slotForManualDispatch,
+} from '../../src/gas/collector-dispatch.js';
 import { collectionCoversDigest } from '../../src/gas/daily-digest.js';
 import { slotAlreadyCollected } from '../../src/scheduler/orchestrator.js';
 
@@ -39,6 +43,16 @@ describe('coleta disparada pelo Apps Script', () => {
     expect(slotForManualDispatch(at('09:15'))).toBe('10:00');
     expect(slotForManualDispatch(at('17:00'))).toBe('18:00');
     expect(slotForManualDispatch(at('23:30'))).toBe('23:00');
+  });
+
+  it('só confirma uma coleta manual que terminou depois do pedido', () => {
+    const request = { requestedAt: '2026-10-05T17:36:30Z', slot: '16:00' as const };
+    expect(manualDispatchCompleted(request, '2026-10-05T17:36:51Z', '2026-10-05T17:41:30Z')).toBe(
+      true,
+    );
+    expect(manualDispatchCompleted(request, '2026-10-05T17:18:51Z', '2026-10-05T17:22:45Z')).toBe(
+      false,
+    );
   });
 
   it('o agendamento atrasado do GitHub não repete um horário já coletado', () => {

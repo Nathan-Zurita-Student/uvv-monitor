@@ -349,6 +349,60 @@ function tap(data: string, updateId: number) {
 }
 
 describe('assistente no webhook', () => {
+  it('confirma uma varredura manual mesmo quando não existe novidade', () => {
+    props.set('MONITOR_DISPATCH_TOKEN', 'github-token');
+    expect(post('/atualizar', 42, 'test-secret', 120)).toBe('ok');
+    expect(messages()[0]?.payload.text).toContain('quando terminar, eu confirmo aqui');
+    expect(props.get('MONITOR_MANUAL_PENDING')).toContain('2026-10-05T15:00:00.000Z');
+
+    vi.setSystemTime(new Date('2026-10-05T15:05:00Z'));
+    sheets
+      .get('run_history')!
+      .push([
+        'run-manual',
+        '2026-10-05T15:00:20Z',
+        '2026-10-05T15:04:39Z',
+        'SUCCESS',
+        'SUCCESS',
+        'SUCCESS',
+        '0',
+        '[]',
+      ]);
+    const refresh = () =>
+      doPost({
+        parameter: { secret: 'test-secret' },
+        postData: { contents: JSON.stringify({ uvv: 'refresh' }) },
+      });
+    expect(refresh()).toBe('ok');
+    expect(messages()[1]?.payload.text).toContain('Varredura concluída às 12:04');
+    expect(messages()[1]?.payload.text).toContain('✅ Portal/AVA: verificado');
+    expect(messages()[1]?.payload.text).toContain('✅ Gmail: verificado');
+    expect(messages()[1]?.payload.text).toContain('✅ Agenda: verificado');
+    expect(messages()[1]?.payload.text).toContain('não encontrei nenhuma mudança nova');
+    expect(props.has('MONITOR_MANUAL_PENDING')).toBe(false);
+
+    refresh();
+    expect(messages()).toHaveLength(2);
+  });
+
+  it('declara a falha da varredura manual e não deixa pedido fantasma', () => {
+    props.set(
+      'MONITOR_MANUAL_PENDING',
+      JSON.stringify({ requestedAt: '2026-10-05T14:59:00.000Z', slot: '12:00' }),
+    );
+    expect(
+      doPost({
+        parameter: { secret: 'test-secret' },
+        postData: {
+          contents: JSON.stringify({ uvv: 'monitor_failure', code: 'MONITOR_FAILED' }),
+        },
+      }),
+    ).toBe('ok');
+    expect(messages()[0]?.payload.text).toContain('Não consegui concluir a varredura');
+    expect(messages()[0]?.payload.text).toContain('não vou apresentar dados antigos');
+    expect(props.has('MONITOR_MANUAL_PENDING')).toBe(false);
+  });
+
   it('entende o pedido, usa a ferramenta, grava o lembrete, registra o log e avisa no horário', () => {
     openAiReplies = [
       functionCall('create_reminder', {

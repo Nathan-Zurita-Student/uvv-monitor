@@ -76,8 +76,11 @@ livres, memória) e só recebe o necessário para cada pergunta. As análises au
 continuam com o Gemini.
 
 Pedidos como “verifica o Portal agora” usam `refresh_sources`, respeitam o intervalo mínimo de dez
-minutos e disparam a mesma coleta completa do monitor. O `setupWebhook` também atualiza o menu `/`
-do Telegram com todos os atalhos disponíveis.
+minutos e disparam a mesma coleta completa do monitor. O pedido fica registrado até o webhook da
+coleta confirmar seu término: o bot sempre envia um recibo com horário e situação de Portal/AVA,
+Gmail e Agenda, mesmo quando não há novidade. Falhas e demora acima de 25 minutos também recebem
+um aviso explícito; dados antigos nunca são apresentados como resultado do pedido. O `setupWebhook`
+também atualiza o menu `/` do Telegram com todos os atalhos disponíveis.
 
 Agenda e Gmail são acessados pela API REST com a autorização Google que o monitor já tem (Gmail
 somente leitura, Agenda e Planilhas), sincronizada pela ação **Configurar conversa do Telegram** ou
@@ -109,7 +112,8 @@ diários, das 10h às 23h (`workflow_dispatch` com a propriedade `MONITOR_DISPAT
 agendamento de reserva do GitHub). O resumo só é enviado depois que `run_history` confirma uma
 coleta iniciada na janela atual; ao concluir, o monitor chama o webhook e libera o envio.
 **🔍 Verificar Portal agora** e `/atualizar` disparam na hora, no máximo uma vez a cada 10 minutos.
-O acionador também envia os lembretes pessoais e, uma vez por dia a partir de
+O recibo final é tentado novamente pelo acionador se o Telegram estiver temporariamente
+indisponível. O acionador também envia os lembretes pessoais e, uma vez por dia a partir de
 `ASSISTANT_PROACTIVE_HOUR`, o aviso proativo mais importante que ainda não foi dado.
 
 Propriedades opcionais no Apps Script:

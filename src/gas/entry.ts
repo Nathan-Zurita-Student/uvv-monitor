@@ -3,7 +3,7 @@
  * Empacotado por `npm run build:gas` em apps-script/Bot.gs; o Code.gs só repassa as chamadas.
  * Não importe módulos que dependam do Node aqui.
  */
-import { addDays, dayRange } from '../assistant/dates.js';
+import { addDays, dayRange, localTime } from '../assistant/dates.js';
 import type { CalendarEvent } from '../assistant/types.js';
 import { decodeCallback } from '../bot/callbacks.js';
 import {
@@ -30,8 +30,12 @@ import {
   type AssistantEnv,
 } from './assistant.js';
 import {
+  clearPendingManualDispatch,
   manualDispatch,
+  manualDispatchCompleted,
   manualDispatchText,
+  MANUAL_TIMEOUT_MS,
+  pendingManualDispatch,
   scheduledDispatch,
   tokenProblemNotice,
 } from './collector-dispatch.js';
@@ -167,6 +171,53 @@ function withLock<T>(work: () => T): T {
   }
 }
 
+function sourceReceipt(label: string, status: string): string {
+  if (status === 'SUCCESS') return `✅ ${label}: verificado`;
+  if (status === 'PARTIAL') return `⚠️ ${label}: verificado parcialmente`;
+  return `❌ ${label}: não foi verificado`;
+}
+
+/** Envia exatamente um recibo para cada varredura pedida pelo usuário. */
+function sendManualDispatchReceipt(
+  props: BotProperties,
+  now: Date,
+  refreshedSnapshot?: ReturnType<typeof buildSnapshot>,
+): 'idle' | 'waiting' | 'sent' | 'timed_out' {
+  const request = pendingManualDispatch();
+  if (!request) return 'idle';
+  const snapshot = refreshedSnapshot ?? buildSnapshot(props.sheetId);
+  if (
+    manualDispatchCompleted(request, snapshot.lastRunStartedAt, snapshot.lastSyncAt) &&
+    snapshot.lastRun &&
+    snapshot.lastSyncAt
+  ) {
+    const finishedAt = new Date(snapshot.lastSyncAt);
+    sendHtml(
+      props,
+      [
+        `✅ <b>Varredura concluída às ${localTime(finishedAt)}</b>`,
+        '',
+        sourceReceipt('Portal/AVA', snapshot.lastRun.portal),
+        sourceReceipt('Gmail', snapshot.lastRun.gmail),
+        sourceReceipt('Agenda', snapshot.lastRun.calendar),
+        '',
+        'Se eu não enviei outro alerta junto deste recibo, não encontrei nenhuma mudança nova que exigisse sua atenção.',
+      ].join('\n'),
+    );
+    clearPendingManualDispatch();
+    return 'sent';
+  }
+  if (now.getTime() - Date.parse(request.requestedAt) >= MANUAL_TIMEOUT_MS) {
+    sendHtml(
+      props,
+      '⚠️ <b>A varredura que você pediu não terminou no tempo esperado.</b> Eu não vou fingir que os dados antigos são novos. As coletas automáticas continuam, mas esta tentativa precisa ser conferida no GitHub Actions.',
+    );
+    clearPendingManualDispatch();
+    return 'timed_out';
+  }
+  return 'waiting';
+}
+
 /** Compromissos da Google Agenda dos próximos 14 dias (telas Hoje/Semana/Calendário). */
 function upcomingEvents(now: Date): { events?: CalendarEvent[]; error?: boolean } {
   try {
@@ -238,6 +289,8 @@ export function doPost(event: {
         // Este POST vem do monitor depois de gravar run_history. Se um resumo estava aguardando
         // essa coleta, entrega imediatamente em vez de esperar o próximo ciclo de cinco minutos.
         sendScheduledDigest(props, now, snapshot);
+        // Um pedido manual sempre recebe confirmação final, inclusive quando não houve novidade.
+        sendManualDispatchReceipt(props, now, snapshot);
       });
       return ok;
     }
@@ -245,8 +298,18 @@ export function doPost(event: {
       withLock(() => {
         const code = update.code === 'GOOGLE_AUTH' ? 'GOOGLE_AUTH' : 'MONITOR_FAILED';
         const properties = PropertiesService.getScriptProperties();
+        const manual = pendingManualDispatch();
+        if (manual) {
+          sendHtml(
+            props,
+            code === 'GOOGLE_AUTH'
+              ? '❌ <b>Não consegui concluir a varredura que você pediu.</b> A autorização do Google expirou ou foi revogada; Portal/AVA, Gmail e Agenda não estão confirmados como atualizados.'
+              : '❌ <b>Não consegui concluir a varredura que você pediu.</b> Esta tentativa falhou, então não vou apresentar dados antigos como se fossem novos.',
+          );
+          clearPendingManualDispatch();
+        }
         const signature = `${localDateKey(new Date())} ${code}`;
-        if (properties.getProperty('MONITOR_FAILURE_NOTICE') === signature) return;
+        if (manual || properties.getProperty('MONITOR_FAILURE_NOTICE') === signature) return;
         sendHtml(
           props,
           code === 'GOOGLE_AUTH'
@@ -376,6 +439,14 @@ export function processReminders(): void {
     withLock(() => sendScheduledDigest(props, now));
   } catch (error) {
     console.error(`Resumo diário não enviado: ${error instanceof Error ? error.message : 'erro'}`);
+  }
+  try {
+    withLock(() => sendManualDispatchReceipt(props, now));
+  } catch (error) {
+    // Mantém o pedido pendente: o próximo ciclo de cinco minutos tenta entregar o recibo outra vez.
+    console.error(
+      `Recibo da varredura não enviado: ${error instanceof Error ? error.message : 'erro'}`,
+    );
   }
   withLock(() => {
     const state = readState();
