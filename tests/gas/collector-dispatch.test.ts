@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dueSlot } from '../../src/gas/collector-dispatch.js';
+import { dueSlot, slotForManualDispatch } from '../../src/gas/collector-dispatch.js';
 import { collectionCoversDigest } from '../../src/gas/daily-digest.js';
 import { slotAlreadyCollected } from '../../src/scheduler/orchestrator.js';
 
@@ -21,17 +21,24 @@ describe('coleta disparada pelo Apps Script', () => {
     ).toBe(false);
   });
 
-  it('dispara cada horário uma vez, logo depois da hora', () => {
+  it('dispara cada horário uma vez, começando vinte minutos antes', () => {
     const at = (time: string) => new Date(`2026-10-05T${time}:00-03:00`);
-    expect(dueSlot(at('11:39'), null)).toBeUndefined();
-    expect(dueSlot(at('11:40'), null)).toBe('12:00');
-    expect(dueSlot(at('12:03'), null)).toBe('12:00');
-    expect(dueSlot(at('12:03'), '2026-10-05 12:00')).toBeUndefined();
-    expect(dueSlot(at('12:03'), '2026-10-04 12:00')).toBe('12:00');
-    expect(dueSlot(at('12:55'), null)).toBeUndefined();
-    expect(dueSlot(at('17:00'), '2026-10-05 12:00')).toBe('17:00');
-    expect(dueSlot(at('19:40'), '2026-10-05 17:00')).toBe('20:00');
-    expect(dueSlot(at('21:20'), '2026-10-05 17:00')).toBeUndefined();
+    expect(dueSlot(at('09:39'), null)).toBeUndefined();
+    expect(dueSlot(at('09:40'), null)).toBe('10:00');
+    expect(dueSlot(at('10:03'), null)).toBe('10:00');
+    expect(dueSlot(at('10:03'), '2026-10-05 10:00')).toBeUndefined();
+    expect(dueSlot(at('10:03'), '2026-10-04 10:00')).toBe('10:00');
+    expect(dueSlot(at('10:50'), null)).toBeUndefined();
+    expect(dueSlot(at('13:40'), '2026-10-05 12:00')).toBe('14:00');
+    expect(dueSlot(at('20:40'), '2026-10-05 20:00')).toBe('21:00');
+    expect(dueSlot(at('22:40'), '2026-10-05 22:00')).toBe('23:00');
+  });
+
+  it('usa o próximo horário lógico em uma coleta manual', () => {
+    const at = (time: string) => new Date(`2026-10-05T${time}:00-03:00`);
+    expect(slotForManualDispatch(at('09:15'))).toBe('10:00');
+    expect(slotForManualDispatch(at('17:00'))).toBe('18:00');
+    expect(slotForManualDispatch(at('23:30'))).toBe('23:00');
   });
 
   it('o agendamento atrasado do GitHub não repete um horário já coletado', () => {
@@ -52,12 +59,12 @@ describe('coleta disparada pelo Apps Script', () => {
         at('2026-10-05T15:30:00'),
       ),
     ).toBe(false);
-    // As 17h chegam às 20:40 depois de uma coleta das 12h atrasada (15:35): rodam.
+    // As 18h chegam às 21:40 depois de uma coleta das 12h atrasada (15:35): rodam.
     expect(
       slotAlreadyCollected(
         at('2026-10-05T15:35:00').toISOString(),
-        '17:00',
-        at('2026-10-05T20:40:00'),
+        '18:00',
+        at('2026-10-05T21:40:00'),
       ),
     ).toBe(false);
     // As 21h chegam depois da meia-noite: a coleta das 21:05 de ontem conta.

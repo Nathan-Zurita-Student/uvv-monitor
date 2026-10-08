@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { scheduledSlots } from '../scheduler/windows.js';
 
 const optionalSecret = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -21,7 +22,7 @@ const environmentSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   PORTAL_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
   DIAGNOSTICS_DIR: z.string().trim().min(1).default('artifacts/diagnostics'),
-  RUN_SLOT: z.enum(['12:00', '17:00', '20:00', '21:00']).optional(),
+  RUN_SLOT: z.enum(scheduledSlots).optional(),
   DAILY_DIGEST_EXTERNAL: z
     .enum(['true', 'false'])
     .default('false')

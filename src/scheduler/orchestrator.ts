@@ -38,7 +38,7 @@ import { createAiProvider, enrichItemsWithAi } from '../ai/service.js';
 /**
  * O agendamento do GitHub é a reserva do disparo feito pelo Apps Script e costuma chegar horas
  * depois. Se alguma coleta já terminou desde (horário - 30 min) da última ocorrência desse horário,
- * ele não roda de novo (nem repete o painel das 12h ou o "amanhã" das 21h).
+ * ele não roda de novo (nem repete o painel das 12h ou o resumo noturno das 20h).
  */
 export function slotAlreadyCollected(
   lastFinishedAt: string | undefined,

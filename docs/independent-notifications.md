@@ -1,6 +1,7 @@
 # Resumos condicionados à coleta do horário
 
-Horários: **12h, 17h e 20h**, sempre em `America/Sao_Paulo`.
+Horários: **10h, 12h, 14h, 16h, 18h, 20h, 21h, 22h e 23h**, sempre em
+`America/Sao_Paulo`.
 
 ## O que muda
 
@@ -10,7 +11,8 @@ dependências atrasarem, a mensagem espera; dados da coleta anterior nunca são 
 resumo atual. Ao terminar, o monitor chama o webhook, renova o snapshot e libera o envio.
 O Apps Script então lê os dados salvos no Sheets e os status atuais do Telegram.
 Até três prioridades são apresentadas com links e botões; tarefas concluídas/ignoradas ficam fora.
-Às 20h há um horizonte de três dias, e às quartas/domingos uma revisão de sete dias.
+Das 20h às 23h há um horizonte de três dias, e às quartas/domingos o resumo das 20h faz uma revisão
+de sete dias.
 
 Uma coleta antiga **não é enviada**. Uma coleta atual que terminou parcialmente pode gerar o
 resumo, mas ele informa a situação de Portal/AVA, Gmail e Calendar. Arquivos e novidades continuam
@@ -43,7 +45,8 @@ Configurar uma tarefa POST para a URL /exec **sem** `?secret=`:
 ```
 
 Header: `Content-Type: application/json`. Timezone: `America/Sao_Paulo`.
-Cron personalizado: `0,1,2,3,4 12,17,20 * * *` (tentativas nos cinco primeiros minutos).
+Cron personalizado: `0,1,2,3,4 10,12,14,16,18,20,21,22,23 * * *` (tentativas nos cinco primeiros
+minutos).
 Não publicar os resultados nem cadastrar status page pública. A resposta não traz dados
 acadêmicos. O endpoint exige o token separado, mesmo que o segredo normal do webhook seja válido.
 
@@ -60,9 +63,8 @@ inválido. Um HTTP 200 isolado não prova que houve envio.
 
 ## Coletas e recuperação
 
-O Apps Script tenta iniciar a coleta às 11h40, 16h40 e 19h40. O cron do GitHub é reserva (11h35,
-16h35 e 19h35) e pode atrasar. Os slots lógicos continuam 12:00, 17:00 e 20:00. O slot legado
-21:00 é aceito para compatibilidade, mas não consta em novos agendamentos.
+O Apps Script tenta iniciar cada coleta vinte minutos antes do resumo. O cron do GitHub mantém só
+três reservas (11h35, 17h35 e 22h35, para 12h, 18h e 23h) e pode atrasar.
 
 Nenhum componente garante entrega no segundo exato: Telegram, internet, Apps Script e agendador
 podem falhar. A prioridade é não entregar um resumo desatualizado; se a coleta atrasar, o resumo
@@ -70,7 +72,7 @@ também atrasa e é tentado novamente pelo acionador de cinco minutos e pelo cal
 
 ## Checklist e retorno à versão anterior
 
-- [x] `npm run check` aprovado e regressões de timeout/mensagens cobertas (255 testes).
+- [x] `npm run check` aprovado e regressões de timeout/mensagens cobertas.
 - [x] Nova implantação publicada (versão 18), mantendo a URL e as permissões existentes.
 - [x] `dailyDigestInfo` mostra enabled=true, tokenConfigured=true e horários corretos.
 - [x] Agendador privado ativo; teste fora da janela retorna idle (HTTP 200, 2,4 segundos).

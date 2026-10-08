@@ -57,7 +57,7 @@ describe('envio das mensagens agendadas', () => {
   const prova = exam();
 
   it('uma novidade vira um cartão curto com botões internos', async () => {
-    const { telegram, repository } = await deliver('17:00', [aop], {
+    const { telegram, repository } = await deliver('14:00', [aop], {
       notifications: [{ item: aop, reason: 'new' }],
       log: [{ itemId: aop.id, signature: 's', level: 'none', lastNotifiedAt: now.toISOString() }],
     });
@@ -76,7 +76,7 @@ describe('envio das mensagens agendadas', () => {
   });
 
   it('várias novidades viram um resumo com "Ver novidades"', async () => {
-    const { telegram, repository } = await deliver('17:00', [aop, prova], {
+    const { telegram, repository } = await deliver('14:00', [aop, prova], {
       notifications: [
         { item: aop, reason: 'new' },
         { item: prova, reason: 'urgent' },
@@ -105,10 +105,10 @@ describe('envio das mensagens agendadas', () => {
     expect(repository.telegramState.panelMessageId).toBe(1);
   });
 
-  it('às 21h só fala de amanhã se houver algo, e no domingo manda a semana', async () => {
-    expect((await deliver('21:00', [aop], emptyPlan)).telegram.sent).toHaveLength(0);
+  it('às 20h só fala de amanhã se houver algo, e no domingo manda a semana', async () => {
+    expect((await deliver('20:00', [aop], emptyPlan)).telegram.sent).toHaveLength(0);
     const tomorrow = item({ officialDeadline: '2026-10-03T23:59:00' });
-    const { telegram } = await deliver('21:00', [tomorrow], emptyPlan, true);
+    const { telegram } = await deliver('20:00', [tomorrow], emptyPlan, true);
     expect(telegram.sent.map((message) => message.text.split('\n')[0])).toEqual([
       '🌙 <b>Amanhã</b> · Sábado, 03 de outubro',
       '📅 <b>Próximos 14 dias</b>',

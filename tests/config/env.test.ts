@@ -51,4 +51,9 @@ describe('configuração de ambiente', () => {
       /UVV_USERNAME e UVV_PASSWORD/,
     );
   });
+
+  it('aceita somente um dos nove horários atuais', () => {
+    expect(loadConfig({ RUN_SLOT: '23:00' }).RUN_SLOT).toBe('23:00');
+    expect(() => loadConfig({ RUN_SLOT: '17:00' })).toThrow(/RUN_SLOT/);
+  });
 });

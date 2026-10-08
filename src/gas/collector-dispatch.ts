@@ -3,11 +3,12 @@
  *
  * O agendamento do GitHub ("schedule") atrasa horas em períodos de carga; um disparo manual
  * começa assim que há máquina. O acionador de 5 minutos do Apps Script chama `scheduledDispatch`,
- * que antecipa as coletas dos resumos (12h, 17h, 20h), e o bot oferece "Verificar Portal agora".
+ * que antecipa as nove coletas diárias, e o bot oferece "Verificar Portal agora".
  * Precisa de um token do GitHub com permissão só de Actions neste repositório, na propriedade
  * MONITOR_DISPATCH_TOKEN (sem ela, nada é disparado e o agendamento do GitHub continua valendo).
  */
 import { localTime } from '../assistant/dates.js';
+import { scheduledSlots } from '../scheduler/windows.js';
 import { localDateKey } from '../utils/dates.js';
 
 export const DISPATCH_TOKEN_PROPERTY = 'MONITOR_DISPATCH_TOKEN';
@@ -19,7 +20,7 @@ const MANUAL_KEY = 'monitor.manual-dispatch';
 /** Atualização pedida no bot: no máximo uma a cada 10 minutos. */
 const MANUAL_COOLDOWN_SECONDS = 600;
 
-export const collectionSlots = ['12:00', '17:00', '20:00'] as const;
+export const collectionSlots = scheduledSlots;
 export type CollectionSlot = (typeof collectionSlots)[number];
 
 function minutes(time: string): number {
@@ -114,11 +115,16 @@ export function tokenProblemNotice(now: Date): string | undefined {
 export type ManualDispatch = 'started' | 'recent' | 'unavailable' | 'failed';
 
 /** "Verificar Portal agora" no bot. */
-export function manualDispatch(): ManualDispatch {
+export function slotForManualDispatch(now: Date): CollectionSlot {
+  const current = minutes(localTime(now));
+  return collectionSlots.find((slot) => minutes(slot) >= current) ?? '23:00';
+}
+
+export function manualDispatch(now = new Date()): ManualDispatch {
   if (!dispatchConfigured()) return 'unavailable';
   const cache = CacheService.getScriptCache();
   if (cache.get(MANUAL_KEY)) return 'recent';
-  if (dispatchCollection('17:00') !== 'ok') return 'failed';
+  if (dispatchCollection(slotForManualDispatch(now)) !== 'ok') return 'failed';
   cache.put(MANUAL_KEY, '1', MANUAL_COOLDOWN_SECONDS);
   return 'started';
 }
@@ -128,7 +134,7 @@ export const manualDispatchText: Record<ManualDispatch, string> = {
     '🔄 Fui verificar o Portal, o AVA e seus e-mails agora. Em uns 5 minutos chega aqui o que tiver de novo (arquivos dos professores inclusive).',
   recent: '🔄 Já estou verificando o Portal; daqui a pouco chega o que tiver de novo.',
   unavailable:
-    'A verificação sob demanda ainda não foi ativada (falta o token do GitHub no Apps Script). As coletas automáticas continuam antes dos resumos das 12h, 17h e 20h.',
+    'A verificação sob demanda ainda não foi ativada (falta o token do GitHub no Apps Script). As coletas automáticas continuam nos horários programados.',
   failed:
     'O GitHub não aceitou o pedido agora. Tenta de novo em alguns minutos; as verificações automáticas continuam.',
 };

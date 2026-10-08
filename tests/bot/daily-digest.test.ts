@@ -10,9 +10,10 @@ describe('conteúdo do resumo periódico', () => {
     expect(dueDigestSlot(at('12:00'), () => false)).toBe('12:00');
     expect(dueDigestSlot(at('12:59'), () => false)).toBe('12:00');
     expect(dueDigestSlot(at('13:00'), () => false)).toBeUndefined();
-    expect(dueDigestSlot(at('17:00'), (key) => key === '2026-10-07 17:00')).toBeUndefined();
+    expect(dueDigestSlot(at('18:00'), (key) => key === '2026-10-07 18:00')).toBeUndefined();
     expect(dueDigestSlot(at('20:00'), () => false)).toBe('20:00');
-    expect(dueDigestSlot(at('21:00'), () => false)).toBeUndefined();
+    expect(dueDigestSlot(at('21:00'), () => false)).toBe('21:00');
+    expect(dueDigestSlot(at('23:59'), () => false)).toBe('23:00');
   });
 
   it('inclui links, andamento e exclui concluídos/ignorados', () => {
@@ -45,11 +46,11 @@ describe('conteúdo do resumo periódico', () => {
 
   it('avisa fontes incompletas e nunca chama memória antiga de informação verificada agora', () => {
     const context = createRenderContext({
-      now: at('17:00'),
+      now: at('18:00'),
       lastSyncAt: '2026-10-06T23:00:00Z',
       items: [],
     });
-    const result = renderDailyDigest(context, '17:00', {
+    const result = renderDailyDigest(context, '18:00', {
       portal: 'PARTIAL',
       gmail: 'FAILED',
       calendar: 'SUCCESS',

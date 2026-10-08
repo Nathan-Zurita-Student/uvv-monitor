@@ -4,11 +4,17 @@ import { encodeCallback } from './callbacks.js';
 import { statusLabels } from './status.js';
 import { escapeHtml, link, truncate } from '../telegram/html.js';
 import { formatShortDate, localDateAt, localDateKey } from '../utils/dates.js';
-import { isWeeklyReviewRun, type DailySlot } from '../scheduler/windows.js';
+import {
+  isWeeklyReviewRun,
+  scheduledSlots,
+  shouldSend72HourSummary,
+  type DailySlot,
+  type ScheduledSlot,
+} from '../scheduler/windows.js';
 import type { RenderContext, Rendered } from './screens.js';
 
-export const digestSlots = ['12:00', '17:00', '20:00'] as const;
-export type DigestSlot = (typeof digestSlots)[number];
+export const digestSlots = scheduledSlots;
+export type DigestSlot = ScheduledSlot;
 
 /** Janela de recuperação: até uma hora depois, nunca antes do horário. */
 export function dueDigestSlot(
@@ -58,7 +64,7 @@ export function renderDailyDigest(
   sources?: DigestSourceState,
 ): Rendered {
   const weekly = isWeeklyReviewRun(context.now, slot);
-  const horizon = weekly ? 7 : slot === '20:00' || slot === '21:00' ? 3 : 1;
+  const horizon = weekly ? 7 : shouldSend72HourSummary(slot) ? 3 : 1;
   // Atrasos recentes têm prioridade, mas uma pendência antiga não deve esconder a próxima prova.
   const recentOverdue = context.agenda.overdue.filter((entry) => (entry.days ?? -99) >= -7);
   const oldOverdue = context.agenda.overdue.filter((entry) => (entry.days ?? -99) < -7);

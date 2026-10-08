@@ -100,8 +100,8 @@ dos arquivos não é lido. O botão **📂 Materiais**, o comando `/materiais` e
 reenviam os arquivos com `sendDocument`/`sendMediaGroup` usando o `file_id`: o Apps Script nunca
 baixa nada do Portal (o download exige login e é feito pelo monitor).
 
-O acionador `processReminders` (5 minutos) também dispara a coleta do monitor antes dos resumos das
-12h, 17h e 20h (`workflow_dispatch` com a propriedade `MONITOR_DISPATCH_TOKEN`; sem ela, vale o
+O acionador `processReminders` (5 minutos) também dispara a coleta do monitor antes dos nove resumos
+diários, das 10h às 23h (`workflow_dispatch` com a propriedade `MONITOR_DISPATCH_TOKEN`; sem ela, vale o
 agendamento de reserva do GitHub). O resumo só é enviado depois que `run_history` confirma uma
 coleta iniciada na janela atual; ao concluir, o monitor chama o webhook e libera o envio.
 **🔍 Verificar Portal agora** e `/atualizar` disparam na hora, no máximo uma vez a cada 10 minutos.

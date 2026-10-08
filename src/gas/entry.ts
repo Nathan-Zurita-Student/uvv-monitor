@@ -43,6 +43,7 @@ import {
   sendScheduledDigest,
 } from './daily-digest.js';
 import { renderDailyDigest } from '../bot/daily-digest.js';
+import { scheduledSlots } from '../scheduler/windows.js';
 import { GasCalendar } from './google-api.js';
 import {
   buildSnapshot,
@@ -219,6 +220,7 @@ export function doPost(event: {
       return HtmlService.createHtmlOutput('unauthorized');
     const update = JSON.parse(event.postData?.contents ?? '{}') as TelegramUpdate & {
       uvv?: string;
+      code?: string;
       configuration?: unknown;
     };
     if (update.uvv === 'configure_chat') {
@@ -235,6 +237,22 @@ export function doPost(event: {
         // Este POST vem do monitor depois de gravar run_history. Se um resumo estava aguardando
         // essa coleta, entrega imediatamente em vez de esperar o próximo ciclo de cinco minutos.
         sendScheduledDigest(props, now, snapshot);
+      });
+      return ok;
+    }
+    if (update.uvv === 'monitor_failure') {
+      withLock(() => {
+        const code = update.code === 'GOOGLE_AUTH' ? 'GOOGLE_AUTH' : 'MONITOR_FAILED';
+        const properties = PropertiesService.getScriptProperties();
+        const signature = `${localDateKey(new Date())} ${code}`;
+        if (properties.getProperty('MONITOR_FAILURE_NOTICE') === signature) return;
+        sendHtml(
+          props,
+          code === 'GOOGLE_AUTH'
+            ? '⚠️ <b>A coleta automática parou</b> porque a autorização do Google expirou ou foi revogada. Renove a credencial <code>GOOGLE_REFRESH_TOKEN</code> para voltar a atualizar a planilha e os resumos.'
+            : '⚠️ <b>A coleta automática falhou antes de terminar.</b> O resumo deste horário não usará dados antigos como se fossem novos. Consulte a execução mais recente no GitHub Actions.',
+        );
+        properties.setProperty('MONITOR_FAILURE_NOTICE', signature);
       });
       return ok;
     }
@@ -412,7 +430,7 @@ export function dailyDigestInfo(): string {
   return JSON.stringify({
     enabled: props.getProperty(DIGEST_ENABLED) === 'true',
     tokenConfigured: Boolean(props.getProperty(DIGEST_TOKEN)),
-    hours: ['12:00', '17:00', '20:00'],
+    hours: scheduledSlots,
     timezone: 'America/Sao_Paulo',
     deliveries: Object.entries(props.getProperties())
       .filter(([key]) => key.startsWith('digest.sent.'))

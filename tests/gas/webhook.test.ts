@@ -215,13 +215,13 @@ describe('envio diário agendado', () => {
     expect(digestPost('x'.repeat(64))).toBe('idle');
     processReminders();
     expect(messages()).toHaveLength(1);
-    vi.setSystemTime(new Date('2026-10-05T20:00:00Z'));
+    vi.setSystemTime(new Date('2026-10-05T21:00:00Z'));
     sheets
       .get('run_history')!
       .push([
-        'run-17',
-        '2026-10-05T19:35:00Z',
-        '2026-10-05T19:50:00Z',
+        'run-18',
+        '2026-10-05T20:35:00Z',
+        '2026-10-05T20:50:00Z',
         'SUCCESS',
         'SUCCESS',
         'SUCCESS',
@@ -230,6 +230,18 @@ describe('envio diário agendado', () => {
       ]);
     expect(digestPost('x'.repeat(64))).toBe('sent');
     expect(messages()).toHaveLength(2);
+  });
+
+  it('avisa uma falha de autenticação do Google uma única vez por dia', () => {
+    const failurePost = () =>
+      doPost({
+        parameter: { secret: 'test-secret' },
+        postData: { contents: JSON.stringify({ uvv: 'monitor_failure', code: 'GOOGLE_AUTH' }) },
+      });
+    expect(failurePost()).toBe('ok');
+    expect(failurePost()).toBe('ok');
+    expect(messages()).toHaveLength(1);
+    expect(messages()[0]?.payload.text).toContain('autorização do Google expirou');
   });
 
   it('inicia a varredura e espera a coleta deste horário antes de entregar', () => {

@@ -1,13 +1,12 @@
 name: UVV Monitor
 
-# O Apps Script dispara a coleta 20 min antes dos avisos de 12h, 17h e 20h.
-# O agendamento abaixo também antecipa a coleta e evita a hora cheia (que o GitHub atrasa mais).
-# É ignorado quando aquele horário já foi coletado. Não determina o horário do resumo do Telegram.
+# O Apps Script dispara as nove coletas diárias 20 min antes de cada resumo.
+# Estes três horários são apenas reservas caso o Apps Script não consiga disparar o GitHub.
 on:
   schedule:
     - cron: '35 14 * * *'
-    - cron: '35 19 * * *'
-    - cron: '35 22 * * *'
+    - cron: '35 20 * * *'
+    - cron: '35 1 * * *'
   workflow_dispatch:
     inputs:
       slot:
@@ -15,7 +14,7 @@ on:
         required: true
         default: '12:00'
         type: choice
-        options: ['12:00', '17:00', '20:00']
+        options: ['10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '21:00', '22:00', '23:00']
 
 permissions:
   contents: read
@@ -70,12 +69,11 @@ jobs:
             echo "RUN_SLOT=${{ inputs.slot }}" >> "$GITHUB_ENV"
           elif [[ "${{ github.event.schedule }}" == "35 14 * * *" ]]; then
             echo "RUN_SLOT=12:00" >> "$GITHUB_ENV"
-          elif [[ "${{ github.event.schedule }}" == "35 19 * * *" ]]; then
-            echo "RUN_SLOT=17:00" >> "$GITHUB_ENV"
+          elif [[ "${{ github.event.schedule }}" == "35 20 * * *" ]]; then
+            echo "RUN_SLOT=18:00" >> "$GITHUB_ENV"
           else
-            echo "RUN_SLOT=20:00" >> "$GITHUB_ENV"
+            echo "RUN_SLOT=23:00" >> "$GITHUB_ENV"
           fi
-      - run: npm run check
       - run: npm start
       - name: Salvar diagnósticos privados
         if: always()

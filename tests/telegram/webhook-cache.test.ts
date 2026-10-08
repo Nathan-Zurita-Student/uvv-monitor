@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { refreshWebhookCache } from '../../src/telegram/webhook-cache.js';
+import { refreshWebhookCache, reportWebhookFailure } from '../../src/telegram/webhook-cache.js';
 
 describe('conclusão da coleta no Apps Script', () => {
   it('avisa a URL do webhook para atualizar a cópia e liberar o resumo', async () => {
@@ -18,5 +18,23 @@ describe('conclusão da coleta no Apps Script', () => {
     await expect(
       refreshWebhookCache('https://script.google.com/macros/s/abc/exec', fetcher),
     ).rejects.toThrow('HTTP 500');
+  });
+
+  it('não confunde uma resposta unauthorized com sucesso', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response('unauthorized', { status: 200 }));
+    await expect(
+      refreshWebhookCache('https://script.google.com/macros/s/abc/exec', fetcher),
+    ).rejects.toThrow('recusou');
+  });
+
+  it('informa ao webhook a categoria da falha fatal', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+    await reportWebhookFailure(
+      'https://script.google.com/macros/s/abc/exec?secret=s3',
+      'GOOGLE_AUTH',
+      fetcher,
+    );
+    const [, init] = fetcher.mock.calls[0] as [URL, RequestInit];
+    expect(init.body).toBe('{"uvv":"monitor_failure","code":"GOOGLE_AUTH"}');
   });
 });

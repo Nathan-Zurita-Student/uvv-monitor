@@ -20,7 +20,8 @@ ferramentas. Sem chave da OpenAI, botões, comandos, avisos e lembretes continua
 - Webhook opcional e gratuito em Google Apps Script para botões inline com resposta imediata.
 - Assistente com GPT e ferramentas (agenda, atividades, provas, Gmail, AVA, lembretes, memória,
   horários livres e prioridades), proativo e com confirmação antes de alterar ou apagar algo.
-- Coletas no GitHub Actions, com resumos às 12h, 17h e 20h liberados somente após a varredura da
+- Coletas no GitHub Actions, com resumos às 10h, 12h, 14h, 16h, 18h, 20h, 21h, 22h e 23h
+  liberados somente após a varredura da
   respectiva janela em `America/Sao_Paulo`.
 - `DRY_RUN=true` é o padrão.
 
@@ -114,7 +115,8 @@ curtas, em linguagem natural, e todas as ações acontecem dentro do Telegram co
 | Várias novidades    | Um resumo ("2 atividades novas, nenhuma prova nova...") com **📋 Ver novidades**, que navega pelos itens na mesma mensagem (⬅️ 1/3 ➡️) |
 | Prazo chegando      | Um alerta por nível: até 3 dias, no dia e quando atrasa                                                                                |
 | 12h                 | Painel em menu, fixado no chat                                                                                                         |
-| 20h                 | Próximos três dias, com provas e entregas pendentes                                                                                    |
+| 10h–18h             | Pendências de hoje e amanhã                                                                                                            |
+| 20h–23h             | Próximos três dias, com provas e entregas pendentes                                                                                    |
 | Quarta/domingo, 20h | Revisão dos próximos sete dias                                                                                                         |
 
 Um item só é avisado de novo quando algo relevante muda: prazo, conteúdo publicado pelo professor,
@@ -378,16 +380,19 @@ A primeira execução inicializa a memória sem enviar dezenas de alertas retroa
 
 ## GitHub Actions
 
-O GitHub pode atrasar as coletas. O Apps Script é acionado pelo cron-job.org às 12h, 17h e 20h,
+O GitHub pode atrasar as coletas. O Apps Script é acionado nos nove horários configurados,
 com recuperação nos quatro minutos seguintes e um acionador Google de reserva, mas só envia o
 resumo quando a coleta daquela janela terminou. Veja
 [configuração e limitações](docs/independent-notifications.md).
 O Apps Script pede a coleta ao GitHub vinte minutos antes de cada resumo. O workflow também tem
 agendamento de reserva antecipado, ignorado quando aquela janela já foi coletada:
 
-- `35 14 * * *` → 11h35 em São Paulo (janela 12h)
-- `35 19 * * *` → 16h35 em São Paulo (janela 17h)
-- `35 22 * * *` → 19h35 em São Paulo (janela 20h)
+- `35 14 * * *` → 11h35 em São Paulo (reserva da janela 12h)
+- `35 20 * * *` → 17h35 em São Paulo (reserva da janela 18h)
+- `35 1 * * *` → 22h35 em São Paulo (reserva da janela 23h)
+
+Validação de código (`format`, lint, tipos, testes e build) roda no workflow CI em pushes e pull
+requests. Ela não faz mais parte de cada coleta, reduzindo tempo e consumo de Actions.
 
 Ative a variável de repositório `DAILY_DIGEST_EXTERNAL=true` somente depois de publicar e testar
 o novo Apps Script. Sem ela, o coletor mantém seus resumos antigos como compatibilidade.

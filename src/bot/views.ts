@@ -123,7 +123,7 @@ function renderFiles(context: RenderContext): Rendered {
       text: [
         '📂 <b>Materiais dos professores</b>',
         '',
-        'Ainda não baixei arquivos dos posts. Eles chegam aqui depois da próxima verificação do Portal (12h, 17h e 21h).',
+        'Ainda não baixei arquivos dos posts. Eles chegam aqui depois da próxima verificação programada do Portal.',
       ].join('\n'),
       keyboard: [backToHome],
     };
