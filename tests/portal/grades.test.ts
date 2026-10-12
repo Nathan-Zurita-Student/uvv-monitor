@@ -37,4 +37,22 @@ describe('boletim do Portal UVV', () => {
       { discipline: 'Cálculo Numérico', metadata: { assessment: 'Prova 1', grade: '7,4' } },
     ]);
   });
+
+  it('ignora a linha de cabeçalho repetida dentro do corpo da tabela', () => {
+    const result = parseGradeTables(
+      [
+        {
+          context: '',
+          headers: ['Período', 'Disciplina', 'Resultado'],
+          rows: [
+            ['Período', 'Disciplina', 'Resultado'],
+            ['2026/2', 'Desenvolvimento de Games', 'Cursando'],
+          ],
+        },
+      ],
+      'https://aluno.uvv.br/Boletim/Aluno/teste',
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]?.discipline).toBe('Desenvolvimento de Games');
+  });
 });

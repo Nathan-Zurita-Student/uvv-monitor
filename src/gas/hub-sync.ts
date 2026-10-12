@@ -26,6 +26,10 @@ export function hubSyncAuthorized(
 
 /** Contrato versionado e somente leitura consumido pelo aplicativo desktop. */
 export function studentHubPayload(snapshot: Snapshot) {
+  const items = itemsOf(snapshot).filter(
+    (item) =>
+      item.type !== 'GRADE' || !/^(disciplina|mat[eé]ria)$/i.test(item.discipline?.trim() ?? ''),
+  );
   return {
     version: 1,
     generatedAt: new Date().toISOString(),
@@ -33,7 +37,7 @@ export function studentHubPayload(snapshot: Snapshot) {
     lastRunStartedAt: snapshot.lastRunStartedAt,
     lastSyncAt: snapshot.lastSyncAt,
     lastRun: snapshot.lastRun,
-    items: itemsOf(snapshot),
+    items,
     classes: classesOf(snapshot),
     files: filesOf(snapshot).filter((file) => !isImageDocument(file.fileName, file.contentType)),
   };

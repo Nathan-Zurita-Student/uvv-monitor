@@ -68,6 +68,11 @@ export function parseGradeTables(tables: GradeTableInput[], sourceUrl: string): 
     const statusIndex = normalizedHeaders.findIndex((header) => /situacao|status/.test(header));
     for (const rawRow of table.rows) {
       const row = rawRow.map(cleanCell);
+      if (
+        row.length === headers.length &&
+        row.every((cell, index) => gradeKey(cell) === normalizedHeaders[index])
+      )
+        continue;
       const discipline = cleanCell(disciplineIndex >= 0 ? row[disciplineIndex] : table.context)
         .replace(/^(boletim|notas?|desempenho)\s*[-:]?\s*/i, '')
         .slice(0, 180);
@@ -138,7 +143,25 @@ export async function collectGrades(page: Page): Promise<PortalItem[]> {
         .replace(/\s+/g, ' ')
         .trim();
       const headers = explicitHeaders.length > 0 ? explicitHeaders : (rows.shift() ?? []);
-      return { context, headers, rows };
+      return {
+        context,
+        headers,
+        rows: rows.filter(
+          (row) =>
+            row.length !== headers.length ||
+            row.some(
+              (cell, index) =>
+                cell
+                  .normalize('NFD')
+                  .replace(/\p{Diacritic}/gu, '')
+                  .toLowerCase() !==
+                (headers[index] ?? '')
+                  .normalize('NFD')
+                  .replace(/\p{Diacritic}/gu, '')
+                  .toLowerCase(),
+            ),
+        ),
+      };
     }),
   );
   return parseGradeTables(tables, PORTAL_URLS.grades);
