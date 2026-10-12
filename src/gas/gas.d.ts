@@ -59,6 +59,8 @@ declare namespace GasUtilities {
 }
 
 declare const Utilities: {
+  DigestAlgorithm: { SHA_256: string };
+  computeDigest(algorithm: string, value: string): number[];
   getUuid(): string;
   newBlob(data: string | number[], contentType?: string): GasUtilities.Blob;
   gzip(blob: GasUtilities.Blob): GasUtilities.Blob;

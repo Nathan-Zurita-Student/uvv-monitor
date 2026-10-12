@@ -42,6 +42,29 @@ Depois de mudar o código do bot:
 3. **Implantar → Gerenciar implantações → ✏️ Editar → Versão: Nova versão → Implantar**. Editar a
    implantação existente mantém a mesma URL `/exec`.
 
+## Conexão com o UVV Student Hub
+
+O aplicativo desktop lê o mesmo snapshot normalizado usado pelo bot. Ele não registra outro webhook,
+não chama `getUpdates` e não recebe o token do Telegram. A leitura tem uma chave exclusiva, separada
+e revogável.
+
+Após publicar a versão atualizada do Apps Script:
+
+1. Execute `setupStudentHubSync()` no editor do Apps Script e autorize a execução.
+2. Copie do resultado apenas `endpoint` e `token`.
+3. No aplicativo, abra **Integrações → Bot Telegram → Conectar** e informe esses valores.
+4. Use **Sincronizar agora** para validar. Depois disso, o aplicativo sincroniza ao abrir e a cada
+   três minutos enquanto permanecer aberto.
+
+O endpoint aceita somente POST autenticado com a chave do Student Hub e devolve itens e horários já
+normalizados. A primeira importação não cria uma enxurrada de notificações; alterações posteriores
+são notificadas e o hash de conteúdo impede duplicatas. O monitor já chama `refresh` ao fim de cada
+coleta, então o snapshot fica pronto para a próxima consulta do aplicativo.
+
+Para invalidar o acesso, execute `revokeStudentHubSync()` e desconecte a integração no aplicativo.
+Uma nova execução de `setupStudentHubSync()` cria outra chave. Nunca salve o token no repositório ou
+envie-o por chat.
+
 ## Como o webhook responde
 
 O `doPost` responde com `HtmlService`, que devolve HTTP 200 direto. O `ContentService` responde com

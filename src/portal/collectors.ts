@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Page, Response } from 'playwright';
 import type { ClassSlot } from '../models/class-schedule.js';
-import { documentIdFor } from '../models/portal-document.js';
+import { documentIdFor, isImageDocument } from '../models/portal-document.js';
 import { parseMoodleActivity, type MoodleActivityInput } from '../moodle/activity-parser.js';
 import { logger } from '../utils/logger.js';
 import { buildClassSlots } from './class-schedule.js';
@@ -31,6 +31,117 @@ async function navigate(page: Page, url: string): Promise<void> {
 
 async function responseJson(response: Response): Promise<unknown> {
   return (await response.json()) as unknown;
+}
+
+export interface GradeTableInput {
+  context: string;
+  headers: string[];
+  rows: string[][];
+}
+
+function cleanCell(value: string | undefined): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function gradeKey(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
+/** Converte tanto o boletim em linhas quanto o boletim em colunas de avaliações. */
+export function parseGradeTables(tables: GradeTableInput[], sourceUrl: string): PortalItem[] {
+  const items: PortalItem[] = [];
+  for (const table of tables) {
+    const headers = table.headers.map(cleanCell);
+    const normalizedHeaders = headers.map(gradeKey);
+    const disciplineIndex = normalizedHeaders.findIndex((header) =>
+      /disciplina|materia|unidade curricular|componente curricular/.test(header),
+    );
+    const assessmentIndex = normalizedHeaders.findIndex((header) =>
+      /^(avaliacao|descricao|atividade|prova)$/.test(header),
+    );
+    const periodIndex = normalizedHeaders.findIndex((header) =>
+      /periodo|semestre|etapa|bimestre/.test(header),
+    );
+    const statusIndex = normalizedHeaders.findIndex((header) => /situacao|status/.test(header));
+    for (const rawRow of table.rows) {
+      const row = rawRow.map(cleanCell);
+      const discipline = cleanCell(disciplineIndex >= 0 ? row[disciplineIndex] : table.context)
+        .replace(/^(boletim|notas?|desempenho)\s*[-:]?\s*/i, '')
+        .slice(0, 180);
+      if (!discipline || row.every((cell) => !cell)) continue;
+      const period = periodIndex >= 0 ? (row[periodIndex] ?? '') : '';
+      const gradeStatus = statusIndex >= 0 ? (row[statusIndex] ?? '') : '';
+      for (let column = 0; column < headers.length; column += 1) {
+        const header = headers[column] ?? '';
+        const key = normalizedHeaders[column] ?? '';
+        const grade = row[column] ?? '';
+        if (
+          !grade ||
+          /^[-–—]$/.test(grade) ||
+          column === disciplineIndex ||
+          column === assessmentIndex ||
+          column === periodIndex
+        )
+          continue;
+        if (
+          !/(nota|media|resultado|pont|prova|avalia|aop|n[1234]\b|faltas?|frequencia|situacao|status)/.test(
+            key,
+          )
+        )
+          continue;
+        const assessment =
+          assessmentIndex >= 0 && /^(nota|resultado|pontuacao|media)$/.test(key)
+            ? row[assessmentIndex] || header
+            : header;
+        const signature = `${discipline}|${period}|${assessment}`;
+        const id = createHash('sha256').update(signature).digest('hex').slice(0, 24);
+        items.push({
+          externalId: `grade:${id}`,
+          origin: 'GRADE',
+          sourceUrl,
+          title: assessment || 'Resultado',
+          description: grade,
+          discipline,
+          type: 'GRADE',
+          status: gradeStatus,
+          links: [sourceUrl],
+          metadata: { assessment: assessment || 'Resultado', grade, period, gradeStatus },
+        });
+      }
+    }
+  }
+  return items;
+}
+
+export async function collectGrades(page: Page): Promise<PortalItem[]> {
+  await navigate(page, PORTAL_URLS.grades);
+  const tables = await page.locator('table').evaluateAll((elements) =>
+    elements.map((table) => {
+      const rows = Array.from(table.querySelectorAll('tr')).map((row) =>
+        Array.from(row.querySelectorAll('th,td')).map((cell) =>
+          (cell.textContent ?? '').replace(/\s+/g, ' ').trim(),
+        ),
+      );
+      const explicitHeaders = Array.from(table.querySelectorAll('thead th')).map((cell) =>
+        (cell.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      );
+      const parent = table.closest('.panel,.card,.box,section,article') ?? table.parentElement;
+      const context = (
+        table.querySelector('caption')?.textContent ??
+        parent?.querySelector('h1,h2,h3,h4,.panel-title,.card-title,.panel-heading,.card-header')
+          ?.textContent ??
+        ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim();
+      const headers = explicitHeaders.length > 0 ? explicitHeaders : (rows.shift() ?? []);
+      return { context, headers, rows };
+    }),
+  );
+  return parseGradeTables(tables, PORTAL_URLS.grades);
 }
 
 export async function collectMessages(
@@ -302,6 +413,7 @@ export async function downloadPostDocuments(
       continue;
     }
     for (const attachment of attachments) {
+      if (isImageDocument(attachment.name)) continue;
       const id = documentIdFor(attachment.id);
       if (known.has(id) || pending.some((entry) => documentIdFor(entry.attachment.id) === id))
         continue;
@@ -327,6 +439,7 @@ export async function downloadPostDocuments(
       const response = await page.request.get(attachment.url, { timeout: 90_000 });
       if (!response.ok()) throw new Error(`HTTP ${String(response.status())}`);
       const contentType = response.headers()['content-type'] ?? '';
+      if (isImageDocument(attachment.name, contentType)) continue;
       const length = Number(response.headers()['content-length'] ?? 0);
       if (length > MAX_DOCUMENT_BYTES) {
         documents.push({

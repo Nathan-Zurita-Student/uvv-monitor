@@ -61,6 +61,7 @@ import {
   type SheetWrite,
 } from './snapshot.js';
 import { sendFilesById, sendHtml, telegram, type BotProperties } from './telegram-api.js';
+import { HUB_SYNC_TOKEN_PROPERTY, hubSyncAuthorized, studentHubPayload } from './hub-sync.js';
 
 function properties(): BotProperties {
   const values = PropertiesService.getScriptProperties().getProperties();
@@ -256,6 +257,17 @@ export function doPost(event: {
     const props = properties();
     // O agendador recebe só uma chave restrita; nunca a chave do webhook do Telegram.
     const body: unknown = JSON.parse(event.postData?.contents ?? '{}');
+    if (body && typeof body === 'object' && 'uvv' in body && body.uvv === 'hub_sync') {
+      const token = 'token' in body ? body.token : undefined;
+      const configured =
+        PropertiesService.getScriptProperties().getProperty(HUB_SYNC_TOKEN_PROPERTY);
+      const response = hubSyncAuthorized(token, configured)
+        ? { ok: true, ...studentHubPayload(loadSnapshot(props.sheetId)) }
+        : { ok: false, error: 'unauthorized' };
+      return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(
+        ContentService.MimeType.JSON,
+      );
+    }
     if (body && typeof body === 'object' && 'uvv' in body && body.uvv === 'daily_digest') {
       const token = 'token' in body ? body.token : undefined;
       if (!digestAuthorized(token)) return HtmlService.createHtmlOutput('unauthorized');
@@ -487,6 +499,26 @@ export function processReminders(): void {
 }
 
 export { conversationInfo };
+
+/** Cria uma credencial exclusiva e revogável para a sincronização somente leitura do desktop. */
+export function setupStudentHubSync(): string {
+  const properties = PropertiesService.getScriptProperties();
+  let token = properties.getProperty(HUB_SYNC_TOKEN_PROPERTY);
+  if (!token) {
+    token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    properties.setProperty(HUB_SYNC_TOKEN_PROPERTY, token);
+  }
+  return JSON.stringify({
+    endpoint: ScriptApp.getService().getUrl(),
+    token,
+    configured: true,
+  });
+}
+
+export function revokeStudentHubSync(): string {
+  PropertiesService.getScriptProperties().deleteProperty(HUB_SYNC_TOKEN_PROPERTY);
+  return JSON.stringify({ configured: false });
+}
 
 /** Ativação explícita após publicar. Não devolve a credencial restrita em logs. */
 export function setupDailyDigests(): string {

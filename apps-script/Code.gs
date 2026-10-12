@@ -81,6 +81,20 @@ function conversationInfo() {
   return result;
 }
 
+/** Gera a URL e a chave exclusiva usadas pelo UVV Student Hub. */
+function setupStudentHubSync() {
+  const result = UVVBot.setupStudentHubSync();
+  console.log(result);
+  return result;
+}
+
+/** Revoga imediatamente o acesso do aplicativo desktop sem afetar o bot. */
+function revokeStudentHubSync() {
+  const result = UVVBot.revokeStudentHubSync();
+  console.log(result);
+  return result;
+}
+
 function webhookInfo() {
   const result = UVVBot.webhookInfo();
   console.log(result);

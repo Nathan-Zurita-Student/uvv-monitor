@@ -13,7 +13,10 @@ export function portalItemToCandidate(item: PortalItem): DetectedItemCandidate {
           : /aguardando/.test(portalStatus)
             ? 'WAITING'
             : 'TODO'
-      : item.origin === 'SCHEDULE' || item.type === 'NOTICE' || item.type === 'MESSAGE'
+      : item.origin === 'SCHEDULE' ||
+          item.type === 'GRADE' ||
+          item.type === 'NOTICE' ||
+          item.type === 'MESSAGE'
         ? 'WAITING'
         : 'TODO';
   return {

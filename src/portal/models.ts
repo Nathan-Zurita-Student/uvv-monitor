@@ -1,7 +1,7 @@
 import type { ItemType } from '../models/academic-item.js';
 
 export type PortalItemOrigin =
-  'MESSAGE' | 'CLASS_POST' | 'EAD' | 'SERVICE' | 'CALENDAR' | 'SCHEDULE';
+  'MESSAGE' | 'CLASS_POST' | 'EAD' | 'SERVICE' | 'CALENDAR' | 'SCHEDULE' | 'GRADE';
 
 export interface PortalItem {
   externalId: string;

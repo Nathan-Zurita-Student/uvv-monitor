@@ -7,6 +7,7 @@ import {
   collectClassPosts,
   collectClassSchedule,
   collectEadActivities,
+  collectGrades,
   collectMessages,
   collectRegularSchedule,
   collectServiceHistory,
@@ -94,6 +95,7 @@ export async function collectPortalSafely(
     ['AVA/EAD', collectEadActivities],
     ['Atendimento', collectServiceHistory],
     ['Calendário', collectCalendarEvents],
+    ['Desempenho', collectGrades],
     ['Horários', collectRegularSchedule],
   ];
   for (const [name, collector] of collectors) {

@@ -91,6 +91,14 @@ export function documentIdFor(attachmentId: string): string {
   return `doc:${attachmentId}`;
 }
 
+/** Fotos são normalmente comprovantes enviados pelo aluno, não material didático do professor. */
+export function isImageDocument(fileName: string, contentType = ''): boolean {
+  return (
+    contentType.toLowerCase().startsWith('image/') ||
+    /\.(png|jpe?g|gif|webp|heic|bmp|tiff?)$/i.test(fileName)
+  );
+}
+
 /** Ícone do tipo de arquivo, para listas no Telegram. */
 export function fileIcon(fileName: string): string {
   if (/\.pdf$/i.test(fileName)) return '📕';
