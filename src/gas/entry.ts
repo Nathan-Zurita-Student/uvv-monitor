@@ -261,9 +261,20 @@ export function doPost(event: {
       const token = 'token' in body ? body.token : undefined;
       const configured =
         PropertiesService.getScriptProperties().getProperty(HUB_SYNC_TOKEN_PROPERTY);
-      const response = hubSyncAuthorized(token, configured)
-        ? { ok: true, ...studentHubPayload(loadSnapshot(props.sheetId)) }
-        : { ok: false, error: 'unauthorized' };
+      let response: unknown = { ok: false, error: 'unauthorized' };
+      if (hubSyncAuthorized(token, configured)) {
+        const now = new Date();
+        const start = addDays(now, -365);
+        const end = addDays(now, 730);
+        const calendarId = PropertiesService.getScriptProperties().getProperty('GOOGLE_CALENDAR_ID') || 'primary';
+        let events: CalendarEvent[] = [];
+        try {
+          events = new GasCalendar(calendarId).list(start, end);
+        } catch (error) {
+          console.error(`Agenda não incluída no Student Hub: ${String(error)}`);
+        }
+        response = { ok: true, ...studentHubPayload(loadSnapshot(props.sheetId), events) };
+      }
       return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(
         ContentService.MimeType.JSON,
       );

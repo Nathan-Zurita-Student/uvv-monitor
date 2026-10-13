@@ -1,6 +1,7 @@
 import type { Snapshot } from './snapshot.js';
 import { classesOf, filesOf, itemsOf } from './snapshot.js';
 import { isImageDocument } from '../models/portal-document.js';
+import type { CalendarEvent } from '../assistant/types.js';
 
 export const HUB_SYNC_TOKEN_PROPERTY = 'STUDENT_HUB_SYNC_TOKEN';
 const BUILT_IN_HUB_TOKEN_SHA256 =
@@ -25,7 +26,7 @@ export function hubSyncAuthorized(
 }
 
 /** Contrato versionado e somente leitura consumido pelo aplicativo desktop. */
-export function studentHubPayload(snapshot: Snapshot) {
+export function studentHubPayload(snapshot: Snapshot, calendarEvents: CalendarEvent[] = []) {
   const items = itemsOf(snapshot).filter(
     (item) =>
       item.type !== 'GRADE' || !/^(disciplina|mat[eé]ria)$/i.test(item.discipline?.trim() ?? ''),
@@ -40,5 +41,15 @@ export function studentHubPayload(snapshot: Snapshot) {
     items,
     classes: classesOf(snapshot),
     files: filesOf(snapshot).filter((file) => !isImageDocument(file.fileName, file.contentType)),
+    calendarEvents: calendarEvents.map((event) => ({
+      id: event.id,
+      title: event.title,
+      startsAt: event.start.toISOString(),
+      endsAt: event.end.toISOString(),
+      allDay: event.allDay,
+      description: event.description ?? '',
+      location: event.location ?? '',
+      academicItemId: event.academicItemId ?? '',
+    })),
   };
 }

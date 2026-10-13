@@ -65,6 +65,7 @@ export function parseGradeTables(tables: GradeTableInput[], sourceUrl: string): 
     const periodIndex = normalizedHeaders.findIndex((header) =>
       /periodo|semestre|etapa|bimestre/.test(header),
     );
+    const classIndex = normalizedHeaders.findIndex((header) => /^(turma|classe)$/.test(header));
     const statusIndex = normalizedHeaders.findIndex((header) => /situacao|status/.test(header));
     for (const rawRow of table.rows) {
       const row = rawRow.map(cleanCell);
@@ -85,14 +86,14 @@ export function parseGradeTables(tables: GradeTableInput[], sourceUrl: string): 
         const grade = row[column] ?? '';
         if (
           !grade ||
-          /^[-–—]$/.test(grade) ||
           column === disciplineIndex ||
           column === assessmentIndex ||
-          column === periodIndex
+          column === periodIndex ||
+          column === classIndex
         )
           continue;
         if (
-          !/(nota|media|resultado|pont|prova|avalia|aop|n[1234]\b|faltas?|frequencia|situacao|status)/.test(
+          !/(nota|media|resultado|pont|prova|avalia|aop|av[1-4]\b|tf[1-4]?\b|mp\b|pf\b|final|n[1234]\b|faltas?|frequencia|situacao|status)/.test(
             key,
           )
         )
@@ -113,7 +114,13 @@ export function parseGradeTables(tables: GradeTableInput[], sourceUrl: string): 
           type: 'GRADE',
           status: gradeStatus,
           links: [sourceUrl],
-          metadata: { assessment: assessment || 'Resultado', grade, period, gradeStatus },
+          metadata: {
+            assessment: assessment || 'Resultado',
+            grade,
+            period,
+            gradeStatus,
+            classGroup: classIndex >= 0 ? row[classIndex] ?? '' : '',
+          },
         });
       }
     }

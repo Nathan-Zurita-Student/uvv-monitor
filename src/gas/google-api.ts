@@ -162,16 +162,25 @@ export class GasCalendar implements CalendarPort {
         }),
       );
     }
-    const params = [
+    const baseParams = [
       `timeMin=${encodeURIComponent(start.toISOString())}`,
       `timeMax=${encodeURIComponent(end.toISOString())}`,
       'singleEvents=true',
       'orderBy=startTime',
       'maxResults=250',
     ].join('&');
-    const { status, data } = call<{ items?: RawEvent[] }>('get', `${this.base}?${params}`);
-    if (status >= 400) throw new Error(`A Agenda respondeu HTTP ${String(status)}.`);
-    const events = (data.items ?? []).flatMap((raw) => eventFromApi(raw) ?? []);
+    const events: CalendarEvent[] = [];
+    let pageToken = '';
+    do {
+      const params = `${baseParams}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+      const { status, data } = call<{ items?: RawEvent[]; nextPageToken?: string }>(
+        'get',
+        `${this.base}?${params}`,
+      );
+      if (status >= 400) throw new Error(`A Agenda respondeu HTTP ${String(status)}.`);
+      events.push(...(data.items ?? []).flatMap((raw) => eventFromApi(raw) ?? []));
+      pageToken = data.nextPageToken ?? '';
+    } while (pageToken);
     const serialized = JSON.stringify(events);
     if (serialized.length < 90_000) cache.put(key, serialized, LIST_CACHE_SECONDS);
     return events;

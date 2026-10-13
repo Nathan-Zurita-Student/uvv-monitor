@@ -55,4 +55,17 @@ describe('boletim do Portal UVV', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.discipline).toBe('Desenvolvimento de Games');
   });
+
+  it('preserva todas as colunas e disciplinas do boletim matricial, inclusive notas ainda vazias', () => {
+    const result = parseGradeTables(
+      [{ context: '', headers: ['Período', 'Turma', 'Disciplina', 'AV1', 'TF1', 'AV2', 'TF2', 'MP', 'PF', 'TF', 'Final', 'Resultado'], rows: [
+        ['2026/2', 'CC6N', 'Cálculo Numérico Computacional', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
+        ['2026/2', 'CC6N', 'Desenvolvimento de Games', '-', '6', '-', '-', '-', '-', '6', '-', 'Cursando'],
+      ] }],
+      'https://aluno.uvv.br/Boletim/Aluno/teste',
+    );
+    expect(new Set(result.map((item) => item.discipline))).toEqual(new Set(['Cálculo Numérico Computacional', 'Desenvolvimento de Games']));
+    expect(result.find((item) => item.discipline === 'Cálculo Numérico Computacional' && item.title === 'AV1')?.description).toBe('-');
+    expect(result.find((item) => item.discipline === 'Desenvolvimento de Games' && item.title === 'TF1')?.description).toBe('6');
+  });
 });
